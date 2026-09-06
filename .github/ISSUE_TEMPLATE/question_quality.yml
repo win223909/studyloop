@@ -1,0 +1,26 @@
+name: Question quality / 题目质量
+description: Report an incorrect answer, ambiguous question, or unsupported explanation.
+title: '[Question] '
+body:
+  - type: markdown
+    attributes:
+      value: 'For private generated content, use a redacted or synthetic example. Do not attach student answer sheets or copyrighted course packs.'
+  - type: input
+    id: course
+    attributes:
+      label: Course title and question ID
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or ambiguous?
+    validations:
+      required: true
+  - type: textarea
+    id: reasoning
+    attributes:
+      label: Proposed correction and evidence
+      description: Include your reasoning or a source that supports the correction.
+    validations:
+      required: true

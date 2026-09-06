@@ -1,0 +1,40 @@
+name: Bug report / 问题反馈
+description: Report a reproducible application problem using non-private sample data.
+title: '[Bug] '
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: 'Please use synthetic data. Do not post API keys, cookies, private course files, or student identities. For vulnerabilities, follow SECURITY.md.'
+  - type: input
+    id: version
+    attributes:
+      label: StudyLoop version
+      placeholder: v0.1.0-alpha.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and deployment
+      placeholder: Browser/OS, Node or Docker, local or reverse proxy
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use a bundled course or a minimal original example.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Optional screenshots or error category. Never include authorization headers or a full .env file.

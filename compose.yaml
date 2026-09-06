@@ -1,0 +1,22 @@
+services:
+  studyloop:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - '127.0.0.1:3210:3210'
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3210
+      DATA_DIR: /app/data
+    volumes:
+      - studyloop-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  studyloop-data:

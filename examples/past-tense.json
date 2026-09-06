@@ -1,0 +1,204 @@
+{
+  "id": "past-tense",
+  "version": 1,
+  "title": "English: stories from yesterday",
+  "description": "Build clear past-tense sentences about finished events.",
+  "subject": "English",
+  "level": "A1–A2",
+  "language": "en",
+  "objectives": [
+    "Use regular and common irregular past forms",
+    "Use did with the base form in questions and negatives",
+    "Choose was or were and recognize finished past time"
+  ],
+  "sources": [
+    {
+      "id": "reading",
+      "title": "English: stories from yesterday · Original study notes",
+      "text": "Use the simple past to describe completed events at a finished past time. Expressions such as yesterday, last Saturday, and two days ago often identify that time. For example, “I visited a park yesterday” describes a completed visit.\nMany verbs are regular: add -ed to form the past, as in play → played and walk → walked. If the verb already ends in e, add d, as in live → lived. Some verbs are irregular and need a different form: go → went, eat → ate, see → saw, and have → had. In affirmative simple-past sentences, these forms are the same for I, you, he, she, we, and they: “She went” and “They went.”\nFor most verbs, a negative uses did not (didn't) followed by the base form: “He did not play.” A question uses Did + subject + base form: “Did they go?” Did already marks the past, so do not write “didn't played” or “Did they went?”\nThe verb be has its own simple-past forms. Use was with I, he, she, and it; use were with you, we, and they. Examples: “I was tired” and “They were at home.” For negatives use was not or were not. For questions move was or were before the subject: “Were you tired?” Do not add did to these basic be sentences.\nTime clues help, but the meaning matters too. “Every day” often describes a routine, while “yesterday” identifies a finished past time. In a sentence such as “Yesterday, we walked home,” both the time expression and verb form match a completed past event. These notes focus on the simple past; they do not cover every possible use of past forms.",
+      "kind": "original",
+      "license": "CC0-1.0"
+    }
+  ],
+  "questions": [
+    {
+      "id": "e1",
+      "prompt": "Choose the correct sentence about yesterday.",
+      "choices": [
+        "I play football yesterday.",
+        "I played football yesterday.",
+        "I playing football yesterday.",
+        "I plays football yesterday."
+      ],
+      "answerIndex": 1,
+      "explanation": "Play is regular. Add -ed to describe the completed event: played.",
+      "concept": "Regular past forms",
+      "sourceIds": ["reading"],
+      "difficulty": "foundation",
+      "lesson": {
+        "title": "Regular past forms",
+        "steps": [
+          "Find the completed past time: yesterday.",
+          "For the regular verb play, add -ed: played."
+        ],
+        "takeaway": "For the regular verb play, add -ed: played."
+      },
+      "practice": {
+        "prompt": "Complete: “Last Saturday, we ___ to the shop.”",
+        "choices": ["walk", "walks", "walked", "walking"],
+        "answerIndex": 2,
+        "explanation": "Walk is a regular verb; its past form is walked."
+      }
+    },
+    {
+      "id": "e2",
+      "prompt": "Complete: “She ___ to the library two days ago.”",
+      "choices": ["go", "goed", "going", "went"],
+      "answerIndex": 3,
+      "explanation": "Go has the irregular past form went. Do not add -ed to make goed.",
+      "concept": "Irregular past forms",
+      "sourceIds": ["reading"],
+      "difficulty": "foundation",
+      "lesson": {
+        "title": "Irregular past forms",
+        "steps": [
+          "Some verbs do not form the past with -ed.",
+          "Learn the pair go → went, then use went with any subject in an affirmative past sentence."
+        ],
+        "takeaway": "Learn the pair go → went, then use went with any subject in an affirmative past sentence."
+      },
+      "practice": {
+        "prompt": "Complete: “They ___ lunch at noon yesterday.”",
+        "choices": ["ate", "eated", "eat", "eats"],
+        "answerIndex": 0,
+        "explanation": "Eat has the irregular past form ate."
+      }
+    },
+    {
+      "id": "e3",
+      "prompt": "Which negative sentence is correct?",
+      "choices": [
+        "He did not played tennis.",
+        "He not played tennis.",
+        "He did not play tennis.",
+        "He does not played tennis."
+      ],
+      "answerIndex": 2,
+      "explanation": "Use did not + base form. Did marks the past, so play stays in its base form.",
+      "concept": "Past negatives",
+      "sourceIds": ["reading"],
+      "difficulty": "practice",
+      "lesson": {
+        "title": "Past negatives",
+        "steps": [
+          "Start with the subject: He.",
+          "Add did not to mark a past negative.",
+          "Use the base verb play, not played."
+        ],
+        "takeaway": "Use the base verb play, not played."
+      },
+      "practice": {
+        "prompt": "Choose the correct sentence.",
+        "choices": [
+          "We did not went outside.",
+          "We did not go outside.",
+          "We not went outside.",
+          "We do not went outside."
+        ],
+        "answerIndex": 1,
+        "explanation": "After did not, use the base form go."
+      }
+    },
+    {
+      "id": "e4",
+      "prompt": "Which question is correct?",
+      "choices": [
+        "Did they visit the museum?",
+        "Did they visited the museum?",
+        "Do they visited the museum?",
+        "Visited they did the museum?"
+      ],
+      "answerIndex": 0,
+      "explanation": "A simple-past question usually uses Did + subject + base form: Did they visit...?",
+      "concept": "Past questions",
+      "sourceIds": ["reading"],
+      "difficulty": "practice",
+      "lesson": {
+        "title": "Past questions",
+        "steps": [
+          "Put Did before the subject.",
+          "Follow the subject with the base form visit.",
+          "Do not mark the verb as past again after did."
+        ],
+        "takeaway": "Do not mark the verb as past again after did."
+      },
+      "practice": {
+        "prompt": "Choose the correct question.",
+        "choices": [
+          "Did she saw the film?",
+          "Does she saw the film?",
+          "Did saw she the film?",
+          "Did she see the film?"
+        ],
+        "answerIndex": 3,
+        "explanation": "Use Did + she + see. See is the base form of saw."
+      }
+    },
+    {
+      "id": "e5",
+      "prompt": "Complete: “I ___ tired, but my friends ___ excited.”",
+      "choices": ["were; was", "was; were", "was; was", "were; were"],
+      "answerIndex": 1,
+      "explanation": "Use was with I and were with the plural subject my friends.",
+      "concept": "Was and were",
+      "sourceIds": ["reading"],
+      "difficulty": "practice",
+      "lesson": {
+        "title": "Was and were",
+        "steps": [
+          "Use was with I, he, she, and it.",
+          "Use were with you, we, and they or plural subjects."
+        ],
+        "takeaway": "Use were with you, we, and they or plural subjects."
+      },
+      "practice": {
+        "prompt": "Complete: “You ___ at home, and she ___ at school.”",
+        "choices": ["was; were", "was; was", "were; was", "were; were"],
+        "answerIndex": 2,
+        "explanation": "You takes were; she takes was."
+      }
+    },
+    {
+      "id": "e6",
+      "prompt": "Which expression most clearly identifies a finished past time in “We visited the garden ___”?",
+      "choices": ["every day from now on", "next week", "yesterday", "tomorrow"],
+      "answerIndex": 2,
+      "explanation": "Yesterday identifies a completed past time and matches visited. Next week and tomorrow refer to future time.",
+      "concept": "Finished past time",
+      "sourceIds": ["reading"],
+      "difficulty": "challenge",
+      "lesson": {
+        "title": "Finished past time",
+        "steps": [
+          "Look at the verb visited: it describes a past visit.",
+          "Choose a time expression that refers to a finished past time.",
+          "Yesterday matches that meaning."
+        ],
+        "takeaway": "Yesterday matches that meaning."
+      },
+      "practice": {
+        "prompt": "Which sentence clearly describes a completed past event?",
+        "choices": [
+          "We walk here every day.",
+          "We will walk here tomorrow.",
+          "We are walking here now.",
+          "We walked here last Sunday."
+        ],
+        "answerIndex": 3,
+        "explanation": "Walked and last Sunday both identify a completed past event."
+      }
+    }
+  ],
+  "origin": "sample",
+  "createdAt": "2026-09-06T00:00:00.000Z"
+}

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security reporting / 安全问题
+    url: https://github.com/win223909/studyloop/blob/main/SECURITY.md
+    about: Read the private reporting instructions before disclosing a vulnerability.

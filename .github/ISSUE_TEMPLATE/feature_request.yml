@@ -1,0 +1,23 @@
+name: Feature request / 功能建议
+description: Suggest an improvement to a learner or contributor workflow.
+title: '[Feature] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Learner or operator problem
+      description: Who is affected, and what are they trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe a concrete before/after experience.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and scope
+      description: Mention relevant roadmap items, dependencies, or tradeoffs.
