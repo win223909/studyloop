@@ -1,5 +1,7 @@
 # StudyLoop
 
+[![CI](https://github.com/win223909/studyloop/actions/workflows/ci.yml/badge.svg)](https://github.com/win223909/studyloop/actions/workflows/ci.yml)
+
 **Turn a topic into a course. Turn practice into understanding.**
 
 [简体中文](README.zh-CN.md) · [Get started](#quick-start) · [Model configuration](docs/configuration.md) · [OpenMAIC integration](docs/openmaic.md) · [Roadmap](docs/roadmap.md)
