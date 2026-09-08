@@ -2007,6 +2007,78 @@ textarea:focus-visible {
 .history-row:hover .history-info strong {
   color: var(--accent);
 }
+.history-entry {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.history-entry:last-child {
+  border-bottom: 0;
+}
+.history-entry .history-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+.record-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px;
+  border-radius: 7px;
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.record-delete:hover:not(:disabled) {
+  color: var(--error);
+  background: var(--error-soft);
+}
+.result-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px 18px;
+  margin-left: auto;
+}
+.cleanup-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 24px;
+  padding: 18px 20px;
+  border: 1px solid #e7d7ba;
+  border-radius: 10px;
+  background: #fff9ed;
+  color: #75521e;
+}
+.cleanup-notice > svg {
+  margin-top: 3px;
+}
+.cleanup-notice > div,
+.cleanup-notice > p {
+  flex: 1;
+  min-width: 0;
+}
+.cleanup-notice strong,
+.cleanup-notice p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.cleanup-notice p {
+  margin-top: 4px;
+}
+.cleanup-notice .secondary-button {
+  flex-shrink: 0;
+  font-size: 13px;
+  min-height: 38px;
+  padding: 8px 12px;
+}
 .history-score {
   min-width: 67px;
   color: var(--muted);
@@ -2342,6 +2414,189 @@ textarea:focus-visible {
   background: rgb(9 22 49 / 36%);
   backdrop-filter: blur(3px);
   animation: overlay-enter 180ms ease-out both;
+}
+.deletion-overlay {
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.deletion-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 26px;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 18px 60px rgb(9 22 49 / 18%);
+}
+.deletion-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.deletion-symbol {
+  display: inline-flex;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--error);
+  background: var(--error-soft);
+}
+.deletion-heading h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  line-height: 1.5;
+  letter-spacing: -0.3px;
+}
+.deletion-heading .icon-button {
+  flex-shrink: 0;
+}
+.deletion-course {
+  margin: 20px 0 13px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.deletion-warning,
+.deletion-export-note,
+.deletion-loading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.deletion-warning {
+  color: var(--error);
+}
+.deletion-warning > svg,
+.deletion-export-note > svg {
+  margin-top: 3px;
+}
+.deletion-loading {
+  align-items: center;
+  margin: 24px 0;
+  color: var(--muted);
+}
+.deletion-counts {
+  margin: 20px 0;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--background);
+}
+.deletion-counts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 7px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.deletion-counts dd {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.deletion-retained {
+  margin-bottom: 18px;
+}
+.deletion-retained h3 {
+  font-size: 14px;
+}
+.deletion-retained ul {
+  margin: 7px 0 0;
+  padding-left: 19px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.deletion-local-note {
+  margin: 18px 0 10px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.deletion-export-note {
+  padding: 12px;
+  border-radius: 8px;
+  background: #f4f6fb;
+  color: var(--muted);
+}
+.deletion-error {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #edced0;
+  border-radius: 8px;
+  color: var(--error);
+  background: var(--error-soft);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.deletion-error .text-button {
+  margin-top: 7px;
+  color: var(--error);
+}
+.deletion-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+.deletion-actions > button {
+  min-height: 42px;
+  padding: 10px 17px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: white;
+  background: #b33e48;
+  font-weight: 550;
+}
+.danger-button:hover:not(:disabled) {
+  background: #972f38;
+}
+@media (max-width: 580px) {
+  .history-entry {
+    gap: 10px;
+  }
+  .history-delete {
+    min-width: 38px;
+  }
+  .history-delete > span {
+    display: none;
+  }
+  .deletion-overlay {
+    padding: 14px;
+  }
+  .deletion-dialog {
+    padding: 20px;
+    max-height: calc(100dvh - 28px);
+  }
+  .deletion-heading {
+    gap: 9px;
+  }
+  .deletion-heading h2 {
+    font-size: 18px;
+  }
+  .deletion-symbol {
+    padding: 8px;
+  }
+  .cleanup-notice {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .cleanup-notice > .secondary-button {
+    margin-left: 30px;
+  }
 }
 @keyframes overlay-enter {
   from {

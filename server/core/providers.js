@@ -630,7 +630,16 @@ export async function createPlan(input, options = {}) {
   let sources = input.sources;
   if (!sources) {
     if (input.mode === 'search') sources = await searchSources(input.topic, language, options);
-    else sources = [{ id: 'source-1', title: input.topic, text: input.text, kind: 'upload' }];
+    else
+      sources = [
+        {
+          id: 'source-1',
+          title: input.sourceTitle || input.topic,
+          text: input.text,
+          kind: 'upload',
+          ...(input.sourceUrl ? { url: input.sourceUrl } : {}),
+        },
+      ];
   }
   sources = sufficientSources(sources);
   const proposed = await modelJson(

@@ -38,6 +38,20 @@ Review the proposed course title, level, sources, and objectives. Select the obj
 
 先检查课程大纲和来源，勾选需要练习的知识点，再生成 4、6 或 8 道题。周计划只说明“学什么”时，通常需要补充真正的知识讲解。材料不足或题库复核不通过时，缩小主题、增加来源内容后再试。
 
+### Mainland China textbooks / 国内教材
+
+Use **From a textbook / 从国内教材开始** on the home page to open the [National Smart Education Platform textbook catalogue](https://basic.smartedu.cn/tchMaterial). Choose the school stage, subject, edition and grade on the official site. Sign in there when the reader requires it. StudyLoop does not collect the platform password or login token.
+
+在首页点击官方教材目录，按学段、学科、版本、年级选择教材；需要登录时在官方页面完成。目录可浏览不代表正文无需登录。StudyLoop 不收集平台账号、密码或登录令牌。
+
+Choose **Import a textbook chapter / 导入教材章节**, then upload a chapter file you are allowed to use, or switch to **Paste text** and provide the relevant passage. Fill in the optional source title (including edition, grade, volume, chapter and printed page numbers) and the original textbook detail-page URL. These stay attached to the source in the plan, generated question bank and course export. The URL is a citation supplied by you; it is not fetched or independently verified, and a catalogue title alone is not teaching material.
+
+点击“导入教材章节”，上传自己有权使用的章节文件，或切换到“粘贴资料”提供正文。建议在资料名称中写明版本、年级、册次、章节和书面页码，并填写教材详情页地址；信息会随来源保留在大纲、题库与课程导出中。地址仅用作来源引用，不会自动抓取或核验。教材目录、书名不能替代实际教学内容。
+
+The same upload/text limits apply, so select a chapter rather than a whole long textbook. Some readers only offer online reading; StudyLoop does not add a download option to those sites. Observe each textbook's usage terms and check permission before sharing a course export containing its text. This release provides the official entry and attributed chapter import; automated catalogue synchronisation, authenticated retrieval and OCR are not implemented.
+
+沿用上方文件和文字限制，请选择章节而非整本长教材；部分阅读器只提供在线阅读，StudyLoop 不会为其新增下载权限。教材正文依各自使用条款处理，分享含正文的课程包前须检查授权。本版提供官方入口和带来源的章节导入，尚未实现自动同步目录、代登录抓取或 OCR。
+
 ## Practise / 做练习
 
 Select one answer per question. Choose **“I don't know / 我不会”** if you need an introduction; it is a separate action, not a trick answer. Complete every question before submitting.
@@ -57,6 +71,20 @@ Try the separate consolidation question and submit it for feedback. This practic
 For a deeper lesson, choose **Generate an interactive classroom** on the saved result. StudyLoop passes the selected learning context to its bundled OpenMAIC classroom using the same configured model. Review the proposed outline, then generate a short classic classroom with slides, exercises, and standalone HTML interactions. Use **Return to attempt** to continue the original practice. The classroom library lists lessons already saved in this browser; new classrooms start from a StudyLoop result. Automatic completion or score sync is not included.
 
 如需深入学习，在已保存的答卷结果中点击**“生成互动课堂”**，确认大纲后生成包含幻灯片、练习或独立 HTML 互动的短课。内置 OpenMAIC 复用同一组模型配置，不需要另外部署或填写密钥。课堂内可返回原答卷继续巩固；课堂首页展示本浏览器已保存的课堂，新课堂从答卷创建。每课最多六个场景，可能消耗多次模型请求；当前没有完成状态或成绩自动回传。详见 [OpenMAIC 使用与致谢](openmaic.md)。
+
+## Delete a learning record / 删除学习记录
+
+Choose **Delete record** beside a history entry or on its saved result. Review the course title and file counts, then confirm. This removes the attempt, its consolidation practice and handoff files from the local server. The generated/imported course bank is also removed when no other attempt references it; an associated generation plan is removed only when it can be identified and is not shared. Original sample courses remain available. The preview lists shared or ambiguous items that will be retained; a changed scope requires a new confirmation.
+
+在学习记录列表或答卷详情点击“删除记录”，查看课程名称、删除数量和保留项目后确认。服务端会删除该答卷、巩固练习与课堂交接文件；没有其他答卷引用时，同时删除对应的生成／导入课程题库。生成计划只在关联明确且未共用时清理，示例课保留。范围变化后必须重新确认。
+
+After server deletion, StudyLoop cleans precisely linked OpenMAIC classroom data in the current browser. A persisted cleanup task allows retry after a timeout, interrupted connection or page reload. Keep the same browser cookies and storage until cleanup finishes. A minimal server receipt holds identifiers, counts and completion time so cleanup can verify ownership after the original attempt is gone; it contains no course text or answers. Normal server I/O failures trigger a restoration attempt and an error, not a success notice. This local file store is not a crash-atomic database.
+
+服务端删除成功后，会继续清理当前浏览器中能准确关联的 OpenMAIC 课堂数据。超时、断线或刷新后，待清理任务仍可重试；完成前请保留同一浏览器的 Cookie 和存储。服务端仅保留用于校验所有权和恢复清理的最小凭据，含标识、数量和完成时间，不含课程正文或答案。普通文件操作失败时尝试恢复并报错；文件存储不具备数据库级断电原子性。
+
+Files you downloaded/exported into Downloads or another folder, backups, and classroom copies in other browsers/devices must be removed separately. Older classroom data without a reliable attempt association is retained: delete it from that browser's classroom library if needed. StudyLoop never guesses classroom ownership from a matching title.
+
+已经下载／导出到“下载”等目录的副本、备份、其他浏览器或设备中的课堂，需要分别清理。旧课堂缺少可靠答卷关联时会保留，可到对应浏览器的课堂库手动删除；不会仅凭同名误删。
 
 ## Course packs / 课程包
 

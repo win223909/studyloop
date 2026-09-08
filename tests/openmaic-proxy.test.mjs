@@ -79,6 +79,36 @@ test('classifies only verified native pages and stateless API methods', () => {
   assert.equal(classify('/api/health'), null);
 });
 
+test('classroom cleanup exposes only its exact GET page and remains outside generation APIs', async (t) => {
+  assert.deepEqual(classify('/studyloop-cleanup'), {
+    kind: 'page',
+    generation: false,
+    allowed: true,
+  });
+  assert.equal(classify('/studyloop-cleanup?_rsc=fixture').allowed, true);
+  for (const method of ['HEAD', 'POST', 'DELETE', 'PUT', 'OPTIONS'])
+    assert.equal(classify('/studyloop-cleanup', method).allowed, false);
+  for (const url of [
+    '/studyloop-cleanup/extra',
+    '/studyloop-cleanup/%2e%2e/api/persistence',
+    '/studyloop-cleanup%2fextra',
+  ])
+    assert.equal(classify(url)?.allowed, false);
+  assert.equal(classify('/api/attempt-deletions/fixture-attempt'), null);
+  const requests = [];
+  const current = await fixture(t, (req, res) => {
+    requests.push(req.url);
+    assert.equal(req.headers['x-studyloop-runtime'], TOKEN);
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><title>Cleanup fixture</title>');
+  });
+  const response = await fetch(current.url + '/studyloop-cleanup');
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Cleanup fixture/);
+  assert.equal((await fetch(current.url + '/studyloop-cleanup', { method: 'POST' })).status, 404);
+  assert.deepEqual(requests, ['/studyloop-cleanup']);
+});
+
 test('blocks shared persistence, jobs, voice registration and route-normalization escapes', () => {
   for (const url of [
     '/api/persistence/stages',

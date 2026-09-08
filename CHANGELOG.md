@@ -2,6 +2,8 @@
 
 ## Unreleased — 2026-09-08
 
+- Add owned learning-record deletion with a scope preview, shared-course preservation, local file cleanup, and resumable browser classroom cleanup.
+- Add an official Smart Education textbook entry and optional source title/URL for chapter imports; retain provenance throughout course generation without fetching authenticated pages.
 - Bundle the real OpenMAIC classic classroom from pinned upstream commit `dfebbcf33f3a56064129903faeab70a9e4243146`, with a visible source overlay, integrity-checked build, standalone runtime, source archive, and preserved license notices.
 - Generate a focused classroom from a saved attempt, confirm its outline, learn through up to six slide/exercise/HTML scenes, and return to the original practice. Classroom state stays in browser IndexedDB; completion/score sync is not included.
 - Share the server model configuration and request limits with classrooms. Internal routes require StudyLoop access; client keys and model endpoint overrides are ignored. Pro/PBL, server classroom storage/uploads, cloud media, and MP4 export are disabled.

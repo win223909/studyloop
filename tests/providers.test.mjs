@@ -51,6 +51,32 @@ function mockProvider(
   };
 }
 
+test('provided textbook metadata stays attached to source text without fetching its URL', async () => {
+  const calls = [];
+  const sourceTitle = 'Original mathematics notes, Grade 6, chapter 2, pages 8–10';
+  const sourceUrl = 'https://basic.smartedu.cn/tchMaterial/detail?contentId=fixture-public-id';
+  const plan = await createPlan(
+    { ...input, sourceTitle, sourceUrl },
+    {
+      env,
+      fetch: mockProvider([outline], 'openai-compatible', calls),
+    },
+  );
+  assert.deepEqual(plan.sources, [
+    {
+      id: 'source-1',
+      title: sourceTitle,
+      text: input.text.trim(),
+      kind: 'upload',
+      url: sourceUrl,
+    },
+  ]);
+  assert.equal(calls.length, 1);
+  assert.ok(!calls.some((call) => String(call.url).includes('smartedu.cn')));
+  assert.match(JSON.stringify(calls[0].body), /Original mathematics notes/);
+  assert.match(JSON.stringify(calls[0].body), /fixture-public-id/);
+});
+
 function fixtureBank() {
   const questions = structuredClone(sourceCourse.questions.slice(0, 4));
   questions.forEach((q) => {

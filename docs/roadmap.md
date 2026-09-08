@@ -6,12 +6,14 @@ StudyLoop aims to connect finding reliable material, practising, understanding m
 
 - Original fractions, photosynthesis, and English past-tense examples.
 - Topic search, pasted text, and text-based PDF/TXT/Markdown inputs.
+- Official Smart Education textbook catalogue entry and chapter import with optional source title and URL.
 - Source-backed course outline and learner-selected objectives before generation.
 - Multi-provider model protocols, answer/evidence reviews, and validated course packs.
 - Multiple-choice practice, unknown-answer tracking, immutable replay, short lessons, browser read-aloud, and separate follow-up questions.
 - Bundled OpenMAIC classic classrooms from a pinned source snapshot, shared model settings, saved-attempt handoff, outline confirmation, and return to practice.
 - Searchable 45-provider/region directory and private local settings with connection testing.
 - Anonymous browser ownership, optional shared instance access gate, Docker deployment, and bilingual documentation.
+- Learning-record deletion with shared-course preservation, local file cleanup, and retryable linked classroom cleanup.
 
 ## Next: improve the teaching handoff
 
@@ -22,9 +24,10 @@ StudyLoop aims to connect finding reliable material, practising, understanding m
 
 ## Later: durable learning and broader curricula
 
-- Explicit student accounts, cross-device recovery, parent/teacher roles, and user-controlled retention/deletion.
+- Explicit student accounts, cross-device recovery, parent/teacher roles, and retention policies.
 - Spaced review based on repeated evidence, with conservative mastery estimates and transparent recommendations.
 - Carefully scoped OCR and webpage ingestion with source permissions, extraction diagnostics, and network isolation.
+- Textbook catalogue synchronisation and authorised chapter retrieval with edition and page selection; official login remains separate from model configuration.
 - Additional question types and subject validators; language-specific and accessibility testing.
 - Shareable licensed course collections and course revision history that preserves prior attempt snapshots.
 - Database-backed deployments, monitoring, and cost reporting suitable for larger groups.

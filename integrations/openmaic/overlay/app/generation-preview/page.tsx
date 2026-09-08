@@ -1,5 +1,13 @@
 'use client';
 
+import { STUDYLOOP_EMBEDDED } from '@/lib/studyloop/embedded';
+import {
+  assertAttemptNotDeleted,
+  bindClassroomToCurrentAttempt,
+  readPendingContext,
+  watchClassroomDeletions,
+} from '@/lib/studyloop/classroom-links';
+
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -218,7 +226,9 @@ function GenerationPreviewContent() {
 
   // Load session from sessionStorage
   useEffect(() => {
-    cleanupOldImages(24).catch((e) => log.error(e));
+    // Embedded classrooms share legacy image IDs. Age alone cannot prove that
+    // another saved classroom no longer references an image.
+    if (!STUDYLOOP_EMBEDDED) cleanupOldImages(24).catch((e) => log.error(e));
 
     const saved = sessionStorage.getItem('generationSession');
     if (saved) {
@@ -241,6 +251,26 @@ function GenerationPreviewContent() {
     }
     setSessionLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_STUDYLOOP_EMBEDDED !== 'true') return;
+    const stopDeleted = () => {
+      try {
+        const context = readPendingContext();
+        const raw = sessionStorage.getItem('generationSession');
+        const attemptId =
+          context?.attemptId || (raw ? JSON.parse(raw).studyloopAttemptId : undefined);
+        if (attemptId) assertAttemptNotDeleted(attemptId);
+      } catch {
+        abortControllerRef.current?.abort();
+        clearOutlineReviewTimer();
+        router.replace('/studio');
+      }
+    };
+    const unsubscribe = watchClassroomDeletions(stopDeleted);
+    stopDeleted();
+    return unsubscribe;
+  }, [router]);
 
   // Abort all in-flight requests on unmount
   useEffect(() => {
@@ -320,6 +350,11 @@ function GenerationPreviewContent() {
     setCurrentStepIndex(0);
 
     try {
+      if (STUDYLOOP_EMBEDDED) {
+        const attemptId = readPendingContext()?.attemptId;
+        if (!attemptId) throw new Error('Open this classroom from StudyLoop first.');
+        assertAttemptNotDeleted(attemptId);
+      }
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
@@ -532,6 +567,7 @@ function GenerationPreviewContent() {
 
       // Create stage client-side
       const stageId = nanoid(10);
+      await bindClassroomToCurrentAttempt(stageId);
       const stage: Stage = {
         id: stageId,
         name: extractTopicFromRequirement(currentSession.requirements.requirement),
@@ -1047,6 +1083,7 @@ function GenerationPreviewContent() {
         'generationParams',
         JSON.stringify({
           pdfImages: currentSession.pdfImages,
+          studyloopAttemptId: readPendingContext()?.attemptId,
           agents,
           userProfile,
           languageDirective,

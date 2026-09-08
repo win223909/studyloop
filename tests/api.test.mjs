@@ -62,6 +62,46 @@ test('safe provider classification reaches the client without upstream response 
   assert.ok(!JSON.stringify(result.json).includes('upstream-private-response'));
 });
 
+test('material provenance is validated before generation and keyword search cannot override sources', async (t) => {
+  const calls = [];
+  const { browser } = await instance(t, {
+    core: {
+      providerConfig: () => ({ generationAvailable: true }),
+      createPlan: async (input) => {
+        calls.push(input);
+        return { title: input.topic };
+      },
+    },
+  });
+  const request = browser();
+  const body = {
+    topic: 'Equivalent fractions',
+    level: 'Grade 6',
+    language: 'en',
+    mode: 'text',
+    text: 'Original fixture teaching material. '.repeat(20),
+    sourceTitle: '  Original mathematics notes, Grade 6, chapter 2, pages 8–10  ',
+    sourceUrl: ' https://basic.smartedu.cn/tchMaterial/detail?contentId=fixture-public-id ',
+  };
+  const posted = await request('/api/plans', body);
+  assert.equal(posted.status, 201);
+  assert.equal(calls[0].sourceTitle, body.sourceTitle.trim());
+  assert.equal(calls[0].sourceUrl, body.sourceUrl.trim());
+  for (const invalid of [
+    { sourceUrl: 'javascript:alert(1)' },
+    { sourceUrl: 'https://user:password@example.org/' },
+    { sourceUrl: ['https://example.org'] },
+    { sourceUrl: 'https://example.org/' + 'x'.repeat(2000) },
+    { sourceTitle: 'x'.repeat(201) },
+    { sourceTitle: {} },
+  ])
+    assert.equal((await request('/api/plans', { ...body, ...invalid })).status, 400);
+  assert.equal(calls.length, 1, 'Invalid metadata must not trigger a model request.');
+  assert.equal((await request('/api/plans', { ...body, mode: 'search' })).status, 201);
+  assert.equal(calls[1].sourceTitle, undefined);
+  assert.equal(calls[1].sourceUrl, undefined);
+});
+
 test('sample practice, unknown answers, immutable replay and owner isolation', async (t) => {
   const { browser } = await instance(t);
   const first = browser(),

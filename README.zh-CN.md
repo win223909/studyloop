@@ -20,6 +20,8 @@ StudyLoop 是一个可自行部署的学生学习平台。输入课程名称、�
 - **创建课程**：输入关键词搜索、粘贴文字，或上传可提取文字的 PDF、TXT、Markdown；先确认知识点，再生成 4、6 或 8 道选择题。
 - **查看依据**：保留课程来源和每题引用。关键词默认搜索 Wikipedia；可选 Brave Search，明确标记搜索摘要的性质。
 - **练习与回放**：选择答案或“我不会”，查看固定保存的原始成绩和答卷；讲解后再做一道巩固题，原成绩保持不变。
+- **管理学习记录**：预览后删除答卷、巩固练习与本地关联文件；没有其他记录引用时一并清理生成课程与题库，并支持重试关联课堂清理。
+- **使用国内教材**：从官方智慧教育平台目录选择教材，登录阅读后按章节上传或粘贴资料，保留版本、章节／页码与来源链接。当前不自动抓取登录后的正文。[操作说明](docs/user-guide.md#mainland-china-textbooks--国内教材)
 - **衔接教学**：使用分步讲解和浏览器朗读，再从答卷直接生成内置 OpenMAIC 互动课堂。
 - **分享课程包**：导入、导出经过格式校验的课程 JSON。
 - **选择模型服务**：可搜索 [45 个服务与区域预设](docs/model-providers.md)，按国内、国际、本地分组，也可自定义接口；支持三类协议，模型 ID 自行填写，密钥只保存在服务端。
@@ -80,8 +82,8 @@ npm run classroom:install
 npm run dev
 npm test
 npm run check
-npm run test:classroom
 npx playwright install chromium
+npm run test:classroom
 npm run test:e2e
 ```
 

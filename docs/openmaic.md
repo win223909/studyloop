@@ -40,6 +40,20 @@ StudyLoop 的资料、答卷及所属用户的课堂交接记录保存在 `DATA_
 
 The focused request includes relevant questions, selected answers, explanations and source metadata. The classroom sends its learning content to the configured model provider. Authored course text may contain personal information, so inspect exports before sharing. No automatic classroom completion or assessment callback is included.
 
+## Delete linked classrooms / 删除关联课堂
+
+Deleting a StudyLoop learning record also schedules cleanup of classrooms precisely linked to that attempt in the current browser. New classrooms persist the association before their first save. Existing session-only associations can be migrated when still available; classrooms with no reliable association are retained rather than matched by name. Shared course banks and media used by surviving classrooms are preserved.
+
+The hidden same-origin cleanup page verifies an owned server deletion receipt before writing browser storage. It removes the linked documents, scenes, runtime records, quiz state and unshared local media, then checks for remaining data. Persistent deletion markers prevent updated classroom tabs from recreating deleted work. If another classroom tab still holds the data, close it and retry **classroom cleanup** in StudyLoop; keep the browser's cookies and storage until completion. Interrupted cleanup remains retryable.
+
+删除 StudyLoop 学习记录后，会继续清理当前浏览器中与该答卷准确关联的课堂。新课堂首次保存前记录关联；仍存在的旧会话关联可迁移，缺少关联的旧课堂会保留，不按标题猜测。其他课堂共用的课程题库和媒体会保留。
+
+同源清理页先校验服务端删除凭据，再清理文档、场景、课堂运行记录、测验状态及未共用的本地媒体，并核对残留数据。持久删除标记阻止已更新的课堂页重新保存已删除内容；旧课堂页仍打开时，请关闭其他课堂页后在 StudyLoop 重试清理，完成前保留浏览器 Cookie 和存储。
+
+Downloaded exports, external backups, and copies in other browsers/devices are outside this deletion scope. Server usage counters and model settings are also preserved. See [the learning-record deletion guide](user-guide.md#delete-a-learning-record--删除学习记录) for the full preview and retry flow.
+
+已经下载的导出文件、外部备份及其他浏览器／设备副本需分别清理；服务端额度计数与模型设置保留。完整范围与重试步骤见[删除学习记录](user-guide.md#delete-a-learning-record--删除学习记录)。
+
 ## Rebuild or modify the classroom / 重建与修改课堂
 
 Use **Node 22.13+ in the Node 22 release line** and Corepack with the upstream-pinned **pnpm 10.28.0**. The first build downloads dependencies and compiles the upstream workspace; allow several minutes and several gigabytes of working disk space. No model key is needed for a build.

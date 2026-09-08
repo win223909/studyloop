@@ -1,0 +1,128 @@
+.textbook-source {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid #dce5f3;
+  border-radius: 11px;
+  background: #f8faff;
+}
+.textbook-source-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.textbook-source-content {
+  min-width: 0;
+}
+.textbook-source h3 {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.textbook-source p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.textbook-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 20px;
+  margin-top: 10px;
+}
+.textbook-source-actions > a,
+.textbook-source-actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.6;
+  text-align: left;
+}
+.textbook-source-actions > a:hover,
+.textbook-source-actions > button:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.textbook-source .textbook-source-limits {
+  margin-top: 8px;
+  color: #65748c;
+}
+.source-metadata {
+  margin: 14px 0 4px;
+  border-top: 1px solid var(--line);
+}
+.source-metadata > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 0;
+  color: #496282;
+  font-size: 13px;
+  line-height: 1.6;
+  cursor: pointer;
+  list-style: none;
+}
+.source-metadata > summary::-webkit-details-marker {
+  display: none;
+}
+.source-metadata > summary:focus-visible {
+  outline: 3px solid #718eff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.source-metadata > summary > svg:last-child {
+  margin-left: auto;
+}
+.source-metadata[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.source-metadata-fields {
+  display: grid;
+  gap: 15px;
+  padding-bottom: 15px;
+}
+.source-metadata-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.source-metadata-field > label {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+}
+.source-metadata-field > input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #ccd7e8;
+  border-radius: 7px;
+  background: white;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.source-metadata-field > p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+@media (max-width: 580px) {
+  .textbook-source {
+    gap: 10px;
+    padding: 15px;
+  }
+  .textbook-source-actions {
+    gap: 5px 14px;
+  }
+}

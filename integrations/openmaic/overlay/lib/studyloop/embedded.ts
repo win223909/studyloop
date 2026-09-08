@@ -2,10 +2,16 @@ import { useSettingsStore } from '@/lib/store/settings';
 import type { ProviderId } from '@/lib/types/provider';
 
 export const STUDYLOOP_EMBEDDED = process.env.NEXT_PUBLIC_STUDYLOOP_EMBEDDED === 'true';
-export const CLASSROOM_CONTEXT_KEY = 'studyloop.classroom-context';
-export const CLASSROOM_CONTEXTS_KEY = 'studyloop.classroom-contexts';
+export {
+  CLASSROOM_CONTEXT_KEY,
+  CLASSROOM_CONTEXTS_KEY,
+  CLASSROOM_LINKS_KEY,
+} from './classroom-links';
 
 export interface StudyLoopClassroomContext {
+  attemptId?: string;
+  handoffId?: string;
+  stageId?: string;
   courseTitle: string;
   language: 'zh' | 'en';
   returnUrl: string;

@@ -57,7 +57,9 @@ The ordinary public course projection excludes answers and lesson/practice keys 
 
 Anonymous browser sessions receive a random cookie. The server keeps a hashed token as record owner and verifies ownership on access. The instance password is an optional entrance gate, not an identity provider. Generated courses, plans, attempts, and practice are private to their browser owner; original samples are shared.
 
-JSON file writes use private permissions and atomic replacement. A single-process queue coordinates shared daily usage updates. This design has no multi-process locking, replication, query index, role system, automatic retention, or recovery UI. Scaling to schools requires a database and an explicit identity/authorization design.
+JSON file writes use private permissions and atomic replacement. A single-process queue coordinates shared daily usage updates and related record mutations. This design has no multi-process locking, replication, query index, role system, automatic retention, or account recovery UI. Scaling to schools requires a database and an explicit identity/authorization design.
+
+Attempt deletion computes an owned dependency scope under that queue; a revision hash prevents confirming a stale preview. Non-sample course banks and generation plans are removed only without remaining references. New courses store a trusted internal `planId`; legacy plans require an unambiguous match of metadata and complete source snapshots. The file batch pre-reads backups and attempts restoration on normal I/O failures; it is not crash-atomic. A completed minimal ownership receipt enables idempotent retries and authorises the browser cleanup bridge after the attempt has gone. HTTP 404 alone never authorises deletion of classroom data. See [deletion scope and exclusions](user-guide.md#delete-a-learning-record--删除学习记录).
 
 ## Integration boundary
 

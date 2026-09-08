@@ -1,5 +1,7 @@
 'use client';
 
+import { assertAttemptNotDeleted, attemptFromReturnUrl } from '@/lib/studyloop/classroom-links';
+
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
@@ -58,11 +60,15 @@ function LaunchClassroom() {
       const language =
         typeof data.language === 'string' && data.language.startsWith('en') ? 'en' : 'zh';
       const safeReturn = safeStudyLoopReturnUrl(data.returnUrl);
+      const attemptId = attemptFromReturnUrl(safeReturn);
+      if (!attemptId) throw new Error('INVALID_HANDOFF');
+      assertAttemptNotDeleted(attemptId);
       setCourseTitle(data.courseTitle);
       setReturnUrl(safeReturn);
       setLocaleRef.current(language === 'en' ? 'en-US' : 'zh-CN');
       await syncStudyLoopModel();
       if (controller.signal.aborted) return;
+      assertAttemptNotDeleted(attemptId);
       const requirement =
         language === 'zh'
           ? `请为《${data.courseTitle}》创建中文互动课堂。根据所附学习简报，重点讲解学生尚未掌握的概念，用分步示例、可理解的图示和练习帮助巩固。先提供可供确认的课堂大纲。`
@@ -84,9 +90,14 @@ function LaunchClassroom() {
           courseTitle: data.courseTitle,
           language,
           returnUrl: safeReturn,
+          attemptId,
+          handoffId: handoff,
         }),
       );
-      sessionStorage.setItem('generationSession', JSON.stringify(session));
+      sessionStorage.setItem(
+        'generationSession',
+        JSON.stringify({ ...session, studyloopAttemptId: attemptId, studyloopHandoffId: handoff }),
+      );
       router.replace('/generation-preview');
     })().catch((cause: unknown) => {
       if (!controller.signal.aborted)

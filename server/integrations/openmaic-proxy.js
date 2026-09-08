@@ -48,7 +48,13 @@ const OPENMAIC_API_ROOTS = new Set([
   'verify-video-provider',
   'web-search',
 ]);
-const PAGE_ROOTS = new Set(['studyloop-launch', 'studio', 'generation-preview', 'classroom']);
+const PAGE_ROOTS = new Set([
+  'studyloop-launch',
+  'studyloop-cleanup',
+  'studio',
+  'generation-preview',
+  'classroom',
+]);
 const BLOCKED_PAGE_ROOTS = new Set(['workspace', 'workbench', 'eval']);
 const PUBLIC_ROOTS = new Set(['avatars', 'logos', 'vendor']);
 const PUBLIC_FILES = new Set(['/openmaic-mark.png', '/logo-horizontal.png', '/apple-icon.png']);
@@ -140,6 +146,12 @@ export function classifyOpenMAICRequest(req, { publicFiles } = {}) {
       return { kind: 'api', generation: false, allowed: false };
     return null;
   }
+  if (root === 'studyloop-cleanup')
+    return {
+      kind: 'page',
+      generation: false,
+      allowed: path === '/studyloop-cleanup' && method === 'GET',
+    };
   if (PAGE_ROOTS.has(root)) {
     const exact = ['/studyloop-launch', '/studio', '/generation-preview'].includes(path);
     const classroom = /^\/classroom\/[a-zA-Z0-9_-]{1,160}$/.test(path);

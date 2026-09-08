@@ -5,8 +5,9 @@ import multer from 'multer';
 import path from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Store } from './store.js';
+import { Store, StoreDeleteError } from './store.js';
 import { createSettingsManager } from './settings.js';
 import { HttpError } from './errors.js';
 import { extractUpload } from './uploads.js';
@@ -383,17 +384,149 @@ export async function createApp(options = {}) {
     return samples.find((course) => course.id === id) || (await owned('courses', id, req)).course;
   }
 
+  // Older saved courses predate planId. Match the complete source snapshot and
+  // unchanged outline metadata, never a topic/title alone; ambiguity preserves data.
+  function matchesLegacyPlan(course, plan) {
+    return (
+      course?.origin === 'generated' &&
+      ['title', 'description', 'subject', 'level', 'language'].every(
+        (key) => course[key] === plan?.[key],
+      ) &&
+      Array.isArray(course.objectives) &&
+      course.objectives.length > 0 &&
+      Array.isArray(plan?.objectives) &&
+      course.objectives.every((item) => plan.objectives.includes(item)) &&
+      Array.isArray(course.sources) &&
+      course.sources.length > 0 &&
+      isDeepStrictEqual(course.sources, plan?.sources)
+    );
+  }
+  async function deletionScope(req) {
+    const record = await owned('attempts', req.params.id, req);
+    const { attempt } = record;
+    const owner = req.session.id;
+    const [attempts, courses, plans, practice, handoffs] = await Promise.all(
+      ['attempts', 'courses', 'plans', 'practice', 'classroom-handoffs'].map((collection) =>
+        store.list(collection),
+      ),
+    );
+    const entries = [];
+    const counts = { attempts: 1, practice: 0, handoffs: 0, courses: 0, plans: 0 };
+    const retained = [];
+    const add = (collection, id) => entries.push({ collection, id });
+    for (const item of practice.filter(
+      (item) => item.owner === owner && item.attemptId === attempt.id,
+    )) {
+      add('practice', item.id);
+      counts.practice++;
+    }
+    const linkedHandoffs = handoffs.filter(
+      (item) => item.owner === owner && item.attemptId === attempt.id,
+    );
+    for (const item of linkedHandoffs) add('classroom-handoffs', item.id);
+    counts.handoffs = linkedHandoffs.length;
+    const indexId = hash(`${owner}:${attempt.id}`);
+    if (await store.get('classroom-handoff-index', indexId))
+      add('classroom-handoff-index', indexId);
+
+    const references = attempts.filter(
+      (item) => item.attempt?.id !== attempt.id && item.attempt?.courseId === attempt.courseId,
+    );
+    const savedCourse = courses.find((item) => item.course?.id === attempt.courseId);
+    const course = savedCourse?.owner === owner ? savedCourse.course : record.course;
+    if (samples.some((item) => item.id === attempt.courseId) || course?.origin === 'sample') {
+      retained.push({ resource: 'course', reason: 'sample', count: 1 });
+    } else if (references.length) {
+      retained.push({
+        resource: 'course',
+        reason: 'shared',
+        count: 1,
+        references: references.length,
+      });
+    } else if (savedCourse && savedCourse.owner !== owner) {
+      retained.push({ resource: 'course', reason: 'unmatched', count: 0 });
+    } else if (['generated', 'imported'].includes(course?.origin)) {
+      if (savedCourse) {
+        add('courses', course.id);
+        counts.courses++;
+      }
+      if (course.origin === 'generated') {
+        const planId = savedCourse?.planId ?? record.planId;
+        const candidates = plans.filter(
+          (item) =>
+            item.owner === owner &&
+            (planId !== undefined
+              ? item.plan?.id === planId
+              : matchesLegacyPlan(course, item.plan)),
+        );
+        if (candidates.length === 1) {
+          const plan = candidates[0].plan;
+          const referencesPlan = (item) =>
+            item.planId !== undefined
+              ? item.planId === plan.id
+              : matchesLegacyPlan(item.course, plan);
+          const relatedCourses = courses.filter(
+            (item) => item.owner === owner && item.course?.id !== course.id && referencesPlan(item),
+          );
+          const relatedAttempts = attempts.filter(
+            (item) =>
+              item.owner === owner && item.attempt?.courseId !== course.id && referencesPlan(item),
+          );
+          if (relatedCourses.length || relatedAttempts.length) {
+            const ids = new Set([
+              ...relatedCourses.map((item) => item.course.id),
+              ...relatedAttempts.map((item) => item.attempt.courseId),
+            ]);
+            retained.push({ resource: 'plan', reason: 'shared', count: 1, references: ids.size });
+          } else {
+            add('plans', plan.id);
+            counts.plans++;
+          }
+        } else {
+          retained.push({
+            resource: 'plan',
+            reason: candidates.length ? 'ambiguous' : 'unmatched',
+            count: candidates.length,
+          });
+        }
+      }
+    }
+    // Keep the primary record until the dependent files have been removed.
+    add('attempts', attempt.id);
+    const scope = {
+      attemptId: attempt.id,
+      courseId: attempt.courseId,
+      courseTitle: attempt.courseTitle,
+      counts,
+      handoffIds: linkedHandoffs.map((item) => item.id).sort(),
+      retained,
+    };
+    scope.revision = hash(
+      JSON.stringify({
+        ...scope,
+        entries: [...entries].sort((a, b) =>
+          `${a.collection}:${a.id}`.localeCompare(`${b.collection}:${b.id}`),
+        ),
+      }),
+    );
+    return { scope, entries };
+  }
+
   app.get('/api/courses', async (req, res) => {
-    const saved = (await store.list('courses'))
-      .filter((item) => item.owner === req.session.id)
-      .map((item) => item.course);
+    const saved = await store.transaction(async () =>
+      (await store.list('courses'))
+        .filter((item) => item.owner === req.session.id)
+        .map((item) => item.course),
+    );
     res.json({ courses: [...saved.reverse(), ...samples].map(summary) });
   });
   app.get('/api/courses/:id', async (req, res) =>
-    res.json({ course: publicCourse(await getCourse(req.params.id, req)) }),
+    res.json({
+      course: publicCourse(await store.transaction(() => getCourse(req.params.id, req))),
+    }),
   );
   app.get('/api/courses/:id/export', async (req, res) => {
-    const course = await getCourse(req.params.id, req);
+    const course = await store.transaction(() => getCourse(req.params.id, req));
     res.attachment(`studyloop-${course.id}.json`).json(course);
   });
   app.post('/api/import', async (req, res) => {
@@ -411,7 +544,9 @@ export async function createApp(options = {}) {
         'Invalid course pack. Check the course format and source references. 课程包格式或答案不完整。',
       );
     }
-    await store.put('courses', course.id, { owner: req.session.id, course });
+    await store.transaction(() =>
+      store.put('courses', course.id, { owner: req.session.id, course }),
+    );
     res.status(201).json({ course: publicCourse(course) });
   });
 
@@ -465,6 +600,35 @@ export async function createApp(options = {}) {
       throw new HttpError(400, 'Choose a level and language.');
     if (!['search', 'upload', 'text'].includes(mode))
       throw new HttpError(400, 'Choose a course input method.');
+    const sourceDetails = {};
+    if (mode !== 'search') {
+      for (const [field, limit] of [
+        ['sourceTitle', 200],
+        ['sourceUrl', 2000],
+      ]) {
+        const value = req.body[field];
+        if (value === undefined) continue;
+        if (typeof value !== 'string' || value.length > limit)
+          throw new HttpError(
+            400,
+            'Check the source title and original URL. 请检查资料名称与原文地址。',
+          );
+        if (value.trim()) sourceDetails[field] = value.trim();
+      }
+      if (sourceDetails.sourceUrl) {
+        try {
+          const url = new URL(sourceDetails.sourceUrl);
+          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+            throw new Error('Invalid source URL.');
+          sourceDetails.sourceUrl = url.href;
+        } catch {
+          throw new HttpError(
+            400,
+            'Use an HTTP(S) source page without login credentials. 请填写不含账号密码的原文网页地址。',
+          );
+        }
+      }
+    }
     let text = '';
     if (mode === 'upload') text = await extractUpload(req.file);
     if (mode === 'text') {
@@ -474,17 +638,17 @@ export async function createApp(options = {}) {
     }
     const plan = await withGeneration((requestOptions) =>
       core.createPlan(
-        { topic: topic.trim(), level: level.trim(), language, mode, text },
+        { topic: topic.trim(), level: level.trim(), language, mode, text, ...sourceDetails },
         requestOptions,
       ),
     );
     plan.id = randomUUID();
-    await store.put('plans', plan.id, { owner: req.session.id, plan });
+    await store.transaction(() => store.put('plans', plan.id, { owner: req.session.id, plan }));
     res.status(201).json({ plan });
   });
   app.post('/api/courses', async (req, res) => {
     const { planId, objectives, questionCount } = req.body || {};
-    const { plan } = await owned('plans', planId, req);
+    const { plan } = await store.transaction(() => owned('plans', planId, req));
     if (
       !Array.isArray(objectives) ||
       !objectives.length ||
@@ -502,79 +666,164 @@ export async function createApp(options = {}) {
       origin: 'generated',
       createdAt: new Date().toISOString(),
     });
-    await store.put('courses', course.id, { owner: req.session.id, course });
+    await store.transaction(async () => {
+      const original = await store.get('plans', planId);
+      if (!original || original.owner !== req.session.id)
+        throw new HttpError(
+          409,
+          'The course plan was deleted during generation. Create a new plan. 生成期间课程计划已删除，请重新创建课程计划。',
+        );
+      await store.put('courses', course.id, { owner: req.session.id, planId, course });
+    });
     res.status(201).json({ course: publicCourse(course) });
   });
 
   app.post('/api/courses/:id/attempts', async (req, res) => {
-    const course = await getCourse(req.params.id, req);
-    const answers = req.body?.answers;
-    let graded;
-    try {
-      graded = gradeAttempt(course, answers);
-    } catch {
-      throw new HttpError(
-        400,
-        'Answer every question or select “I don’t know”. 请完成每题或选择“我不会”。',
-      );
-    }
-    const attempt = {
-      id: randomUUID(),
-      courseId: course.id,
-      courseTitle: course.title,
-      createdAt: new Date().toISOString(),
-      answers,
-      ...graded,
-    };
-    // Persist the full source course with the attempt: future imports/edits cannot change replay or practice keys.
-    await store.put('attempts', attempt.id, { owner: req.session.id, attempt, course });
+    const attempt = await store.transaction(async () => {
+      const course = await getCourse(req.params.id, req);
+      const answers = req.body?.answers;
+      let graded;
+      try {
+        graded = gradeAttempt(course, answers);
+      } catch {
+        throw new HttpError(
+          400,
+          'Answer every question or select “I don’t know”. 请完成每题或选择“我不会”。',
+        );
+      }
+      const value = {
+        id: randomUUID(),
+        courseId: course.id,
+        courseTitle: course.title,
+        createdAt: new Date().toISOString(),
+        answers,
+        ...graded,
+      };
+      const saved = await store.get('courses', course.id);
+      // Preserve replay keys and the trusted server-side plan association.
+      await store.put('attempts', value.id, {
+        owner: req.session.id,
+        attempt: value,
+        course,
+        ...(saved?.owner === req.session.id && saved.planId ? { planId: saved.planId } : {}),
+      });
+      return value;
+    });
     res.status(201).json({ attempt });
   });
   app.get('/api/attempts', async (req, res) => {
-    const attempts = (await store.list('attempts'))
-      .filter((item) => item.owner === req.session.id)
-      .map((item) => item.attempt)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const attempts = await store.transaction(async () =>
+      (await store.list('attempts'))
+        .filter((item) => item.owner === req.session.id)
+        .map((item) => item.attempt)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    );
     res.json({ attempts });
   });
   app.get('/api/attempts/:id', async (req, res) =>
-    res.json({ attempt: (await owned('attempts', req.params.id, req)).attempt }),
+    res.json({
+      attempt: (await store.transaction(() => owned('attempts', req.params.id, req))).attempt,
+    }),
   );
+  app.get('/api/attempts/:id/deletion-preview', async (req, res) => {
+    const { scope } = await store.transaction(() => deletionScope(req));
+    res.json(scope);
+  });
+  app.get('/api/attempt-deletions/:id', async (req, res) => {
+    const value = await store.transaction(() => owned('attempt-deletions', req.params.id, req));
+    if (value.receipt?.completed !== true) throw new HttpError(404, 'Deletion not completed.');
+    res.json(value.receipt);
+  });
+  app.delete('/api/attempts/:id', async (req, res) => {
+    if (!idPattern.test(req.params.id || '')) throw new HttpError(404, 'Not found.');
+    const result = await store.transaction(async () => {
+      const previous = await store.get('attempt-deletions', req.params.id);
+      if (previous?.owner === req.session.id && previous.receipt?.completed === true)
+        return { ...previous.receipt, retained: [] };
+      const { scope, entries } = await deletionScope(req);
+      if (!/^[a-f0-9]{64}$/.test(req.body?.revision || ''))
+        throw new HttpError(400, 'Preview the deletion before confirming. 请先预览删除范围。');
+      if (req.body.revision !== scope.revision)
+        throw new HttpError(
+          409,
+          'The deletion scope changed. Review the updated preview before confirming again. 删除范围已变化，请重新预览后确认。',
+        );
+      const receipt = {
+        attemptId: scope.attemptId,
+        handoffIds: scope.handoffIds,
+        deleted: scope.counts,
+        deletedAt: new Date().toISOString(),
+        completed: true,
+      };
+      try {
+        await store.deleteMany(entries, {
+          records: [
+            {
+              collection: 'attempt-deletions',
+              id: scope.attemptId,
+              value: { owner: req.session.id, receipt },
+            },
+          ],
+        });
+      } catch (error) {
+        if (error instanceof StoreDeleteError && error.restoreFailed) {
+          console.error(
+            'Record deletion recovery was incomplete. Check local storage access before retrying.',
+          );
+          throw new HttpError(
+            500,
+            'Deletion failed and recovery was incomplete. Check local storage access before retrying. 删除失败且未能完整恢复，请检查本地存储权限后再试。',
+          );
+        }
+        throw new HttpError(
+          500,
+          'Deletion failed. No completion was recorded; reload the preview before retrying. 删除失败，未记录删除完成；请重新预览后重试。',
+        );
+      }
+      return { ...receipt, retained: scope.retained };
+    });
+    res.json(result);
+  });
   app.post('/api/attempts/:id/practice/:questionId', async (req, res) => {
-    const { course } = await owned('attempts', req.params.id, req);
-    const question = course.questions.find((item) => item.id === req.params.questionId);
-    if (!question) throw new HttpError(404, 'Question not found.');
-    let result;
-    try {
-      result = gradePractice(question, req.body?.answer);
-    } catch {
-      throw new HttpError(400, 'Choose an answer or “I don’t know”.');
-    }
-    const id = randomUUID();
-    await store.put('practice', id, {
-      id,
-      owner: req.session.id,
-      attemptId: req.params.id,
-      questionId: question.id,
-      answer: req.body.answer,
-      ...result,
-      createdAt: new Date().toISOString(),
+    const result = await store.transaction(async () => {
+      const { course } = await owned('attempts', req.params.id, req);
+      const question = course.questions.find((item) => item.id === req.params.questionId);
+      if (!question) throw new HttpError(404, 'Question not found.');
+      let graded;
+      try {
+        graded = gradePractice(question, req.body?.answer);
+      } catch {
+        throw new HttpError(400, 'Choose an answer or “I don’t know”.');
+      }
+      const id = randomUUID();
+      await store.put('practice', id, {
+        id,
+        owner: req.session.id,
+        attemptId: req.params.id,
+        questionId: question.id,
+        answer: req.body.answer,
+        ...graded,
+        createdAt: new Date().toISOString(),
+      });
+      return graded;
     });
     res.json(result);
   });
   app.get('/api/attempts/:id/openmaic', async (req, res) => {
-    const { course, attempt } = await owned('attempts', req.params.id, req);
+    const { course, attempt } = await store.transaction(() =>
+      owned('attempts', req.params.id, req),
+    );
     res.json(buildOpenMAICBrief(course, attempt));
   });
 
   app.post('/api/attempts/:id/classroom-handoff', async (req, res) => {
-    const { course, attempt } = await owned('attempts', req.params.id, req);
-    if (!classroomConfig().openmaicAvailable)
-      throw new HttpError(
-        503,
-        'The built-in classroom is not installed. 内置课堂尚未安装，请完成项目安装。',
-      );
     const handoff = await store.transaction(async () => {
+      const { course, attempt } = await owned('attempts', req.params.id, req);
+      if (!classroomConfig().openmaicAvailable)
+        throw new HttpError(
+          503,
+          'The built-in classroom is not installed. 内置课堂尚未安装，请完成项目安装。',
+        );
       const indexId = hash(`${req.session.id}:${attempt.id}`);
       const index = await store.get('classroom-handoff-index', indexId);
       const existing = index ? await store.get('classroom-handoffs', index.id) : null;
@@ -601,7 +850,11 @@ export async function createApp(options = {}) {
     });
   });
   app.get('/api/classroom-handoffs/:id', async (req, res) => {
-    const handoff = await owned('classroom-handoffs', req.params.id, req);
+    const handoff = await store.transaction(async () => {
+      const value = await owned('classroom-handoffs', req.params.id, req);
+      await owned('attempts', value.attemptId, req);
+      return value;
+    });
     if (handoff.expiresAt <= Date.now())
       throw new HttpError(
         410,

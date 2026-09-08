@@ -42,7 +42,7 @@ Keep changes focused. Preserve the immutable submitted-attempt contract, answer 
 
 Document request protocol, authentication, endpoint configuration, model IDs, failure cases, and a mock-backed test. Do not embed a new vendor's key or the maintainer's local configuration. Unsupported custom authentication must be explicit.
 
-The bundled OpenMAIC source is pinned and verified by hash. Make classroom changes in `integrations/openmaic/overlay/`, then rebuild with `npm run classroom:install`. Preserve upstream copyright/license notices, the LGPL library source and replacement path, and prominent thanks to OpenMAIC. See [the integration guide](docs/openmaic.md). Test the actual generated classroom, including student interaction and return-to-practice behaviour. The `test:classroom` suite exercises the real bundled Next.js server against a local synthetic model fixture; it requires a completed classroom build.
+The bundled OpenMAIC source is pinned and verified by hash. Make classroom changes in `integrations/openmaic/overlay/`, then rebuild with `npm run classroom:install`. Preserve upstream copyright/license notices, the LGPL library source and replacement path, and prominent thanks to OpenMAIC. See [the integration guide](docs/openmaic.md). Test the actual generated classroom, including student interaction and return-to-practice behaviour. The `test:classroom` suite exercises the real bundled Next.js server against a local synthetic model fixture and verifies classroom cleanup in isolated browser storage; it requires a completed classroom build and Playwright Chromium. Use temporary test data, never a learner's real history, for deletion tests.
 
 ## Reporting bugs and security issues
 

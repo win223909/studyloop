@@ -26,13 +26,23 @@ import {
   Settings2,
   Sparkles,
   Square,
+  Trash2,
   Upload,
   Volume2,
   X,
 } from 'lucide-react';
 import Logo from './Brand.jsx';
 import ModelSettings from './ModelSettings.jsx';
+import TextbookSource, { SourceMetadataFields } from './TextbookSource.jsx';
 import { createApiError, formatApiError, isModelConfigurationError } from './api-errors.js';
+import DeleteAttemptDialog, { DELETION_COPY } from './DeleteAttemptDialog.jsx';
+import {
+  queueAttemptClassroomCleanup,
+  cleanupAttemptClassrooms,
+  getPendingClassroomCleanups,
+  retryPendingClassroomCleanups,
+  discardQueuedClassroomCleanup,
+} from './classroom-cleanup.js';
 
 const REPO = 'https://github.com/win223909/studyloop';
 const COPY = {
@@ -514,6 +524,7 @@ export default function App() {
     localStorage.getItem('studyloop-language') === 'en' ? 'en' : 'zh',
   );
   const t = COPY[lang];
+  const deletionText = DELETION_COPY[lang];
   const [view, setView] = useState(() =>
     new URLSearchParams(window.location.search).get('view') === 'settings' ? 'settings' : 'home',
   );
@@ -525,11 +536,25 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [cleanupPending, setCleanupPending] = useState(() => {
+    try {
+      return getPendingClassroomCleanups().length > 0;
+    } catch {
+      return false;
+    }
+  });
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [deletionRefreshPending, setDeletionRefreshPending] = useState(false);
+  const deletionInFlight = useRef(false);
   const [mode, setMode] = useState('search');
   const [topic, setTopic] = useState('');
   const [level, setLevel] = useState(lang === 'zh' ? '小学高年级' : 'Upper primary');
   const [courseLang, setCourseLang] = useState(lang);
   const [material, setMaterial] = useState('');
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [sourceFieldsOpen, setSourceFieldsOpen] = useState(false);
   const [file, setFile] = useState(null);
   const [filter, setFilter] = useState('all');
   const [plan, setPlan] = useState(null);
@@ -571,6 +596,7 @@ export default function App() {
     const [library, records] = await Promise.all([api('/api/courses'), api('/api/attempts')]);
     setCourses(library.courses);
     setAttempts(records.attempts);
+    return { courses: library.courses, attempts: records.attempts };
   };
   useEffect(() => {
     let active = true;
@@ -669,6 +695,170 @@ export default function App() {
       setPracticeResults({});
       navigate('results', data.attempt.id);
     });
+  const updatePendingCleanups = (fallback = false) => {
+    try {
+      const pending = getPendingClassroomCleanups().length > 0 || fallback;
+      setCleanupPending(pending);
+      return pending;
+    } catch {
+      setCleanupPending(fallback);
+      return fallback;
+    }
+  };
+  const refreshDeletionLibrary = async () => {
+    const library = await loadLibrary();
+    const restoredId = new URLSearchParams(window.location.search).get('attempt');
+    // The user may navigate while browser cleanup is running. Reconcile current
+    // state, rather than the answer/course captured when the retry started.
+    setAttempt((current) =>
+      current && !library.attempts.some((item) => item.id === current.id) ? null : current,
+    );
+    if (restoredId && !library.attempts.some((item) => item.id === restoredId)) {
+      setOpenResults({});
+      setPracticeAnswers({});
+      setPracticeResults({});
+      navigate('history');
+    }
+    setCourse((current) =>
+      current && !library.courses.some((item) => item.id === current.id) ? null : current,
+    );
+    setDeleteTarget((current) =>
+      current && !library.attempts.some((item) => item.id === current.id) ? null : current,
+    );
+    setDeletionRefreshPending(false);
+  };
+  const validDeletionReceipt = (result, id) =>
+    result?.attemptId === id &&
+    result.completed === true &&
+    Array.isArray(result.handoffIds) &&
+    result.handoffIds.every(
+      (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(value),
+    ) &&
+    Object.keys(deletionText.counts).every(
+      (key) => Number.isInteger(result.deleted?.[key]) && result.deleted[key] >= 0,
+    ) &&
+    result.deleted.attempts === 1;
+  const deleteRecord = async (record, preview) => {
+    if (deletionInFlight.current) return;
+    deletionInFlight.current = true;
+    const cleanupInput = { attemptId: record.id, handoffIds: preview.handoffIds };
+    let hadQueuedCleanup = false;
+    try {
+      try {
+        hadQueuedCleanup = getPendingClassroomCleanups().some((job) => job.attemptId === record.id);
+        queueAttemptClassroomCleanup(cleanupInput);
+      } catch {
+        throw new Error(deletionText.queueFailed);
+      }
+      let result;
+      try {
+        result = await api(`/api/attempts/${encodeURIComponent(record.id)}`, {
+          method: 'DELETE',
+          body: { revision: preview.revision },
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!validDeletionReceipt(result, record.id)) {
+          throw new Error(deletionText.unconfirmed);
+        }
+      } catch (cause) {
+        if (cause.status >= 400 && cause.status < 500) {
+          try {
+            // A rejected retry cannot resolve an older request whose result is
+            // still unknown. Preserve its durable receipt-checking task.
+            if (!hadQueuedCleanup) discardQueuedClassroomCleanup(record.id);
+          } catch {
+            /* Retry still verifies a receipt. */
+          }
+          updatePendingCleanups();
+          throw cause;
+        }
+        // A lost response does not establish whether DELETE committed. Only an
+        // owner-checked receipt can recover the successful result.
+        try {
+          const receipt = await api(`/api/attempt-deletions/${encodeURIComponent(record.id)}`, {
+            signal: AbortSignal.timeout(15000),
+          });
+          if (validDeletionReceipt(receipt, record.id)) result = receipt;
+        } catch {
+          /* Keep the staged task until the server confirms the deletion. */
+        }
+        if (!validDeletionReceipt(result, record.id)) {
+          updatePendingCleanups(true);
+          throw new Error(deletionText.unconfirmed);
+        }
+      }
+      setDeleteTarget(null);
+      setAttempts((previous) => previous.filter((item) => item.id !== record.id));
+      if (result.deleted?.courses > 0) {
+        setCourses((previous) => previous.filter((item) => item.id !== preview.courseId));
+        if (course?.id === preview.courseId) setCourse(null);
+      }
+      if (attempt?.id === record.id) {
+        setAttempt(null);
+        setOpenResults({});
+        setPracticeAnswers({});
+        setPracticeResults({});
+      }
+      navigate('history');
+      setCleanupPending(true);
+      setCleanupBusy(true);
+      let refreshed = false;
+      try {
+        await refreshDeletionLibrary();
+        refreshed = true;
+      } catch {
+        setDeletionRefreshPending(true);
+      }
+      try {
+        const cleaned = await cleanupAttemptClassrooms({
+          attemptId: result.attemptId,
+          handoffIds: result.handoffIds,
+        });
+        const pending = updatePendingCleanups(cleaned.ok !== true || cleaned.pending > 0);
+        if (!pending && refreshed) setNotice(deletionText.deleted);
+      } catch {
+        updatePendingCleanups(true);
+      } finally {
+        setCleanupBusy(false);
+      }
+    } finally {
+      deletionInFlight.current = false;
+    }
+  };
+  const retryCleanup = async () => {
+    if (cleanupBusy || deletionInFlight.current) return;
+    setCleanupBusy(true);
+    setNotice('');
+    try {
+      const result = await retryPendingClassroomCleanups();
+      const pending = updatePendingCleanups(result.ok !== true || result.pending > 0);
+      // Retrying may confirm a DELETE whose response never reached this page.
+      // Refresh visible records even when another cleanup task remains pending.
+      let refreshed = false;
+      try {
+        await refreshDeletionLibrary();
+        refreshed = true;
+      } catch {
+        setDeletionRefreshPending(true);
+      }
+      if (!pending && refreshed) setNotice(deletionText.cleanupDone);
+    } catch {
+      updatePendingCleanups(true);
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+  const refreshAfterDeletion = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await refreshDeletionLibrary();
+    } catch {
+      setDeletionRefreshPending(true);
+    } finally {
+      setBusy(false);
+    }
+  };
   const makePlan = (event) => {
     event.preventDefault();
     work(async () => {
@@ -685,6 +875,10 @@ export default function App() {
       body.set('mode', mode);
       if (mode === 'text') body.set('text', material);
       if (mode === 'upload') body.set('file', file);
+      if (mode !== 'search') {
+        if (sourceTitle.trim()) body.set('sourceTitle', sourceTitle.trim());
+        if (sourceUrl.trim()) body.set('sourceUrl', sourceUrl.trim());
+      }
       const data = await api('/api/plans', { method: 'POST', body });
       setPlan(data.plan);
       setObjectives(data.plan.objectives);
@@ -924,6 +1118,33 @@ export default function App() {
           </button>
         </header>
         <main id="main-content" className={`main-content view-${view}`} ref={mainRef}>
+          {cleanupPending && (
+            <div className="cleanup-notice" role="status">
+              {cleanupBusy ? <LoaderCircle className="spin" size={18} /> : <Info size={18} />}
+              <div>
+                <strong>
+                  {cleanupBusy ? deletionText.cleanupBusy : deletionText.cleanupPendingTitle}
+                </strong>
+                <p>{deletionText.savedPending}</p>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={retryCleanup}
+                disabled={cleanupBusy || Boolean(deleteTarget)}
+              >
+                {deletionText.retryCleanup}
+              </button>
+            </div>
+          )}
+          {deletionRefreshPending && (
+            <div className="cleanup-notice" role="alert">
+              <Info size={18} />
+              <p>{deletionText.refreshPending}</p>
+              <button className="secondary-button" onClick={refreshAfterDeletion} disabled={busy}>
+                {deletionText.retryRefresh}
+              </button>
+            </div>
+          )}
           {error && (
             <div role="alert" className="message error-message">
               <Info size={18} />
@@ -1113,6 +1334,18 @@ export default function App() {
                             </button>
                           </div>
                         )}
+                        {mode !== 'search' && (
+                          <SourceMetadataFields
+                            lang={lang}
+                            title={sourceTitle}
+                            url={sourceUrl}
+                            onTitleChange={setSourceTitle}
+                            onUrlChange={setSourceUrl}
+                            expanded={sourceFieldsOpen}
+                            onExpandedChange={setSourceFieldsOpen}
+                            disabled={busy}
+                          />
+                        )}
                         <div className="composer-footer">
                           <div className="composer-options">
                             <label>
@@ -1151,6 +1384,15 @@ export default function App() {
                         </div>
                       </div>
                     </form>
+                    <TextbookSource
+                      lang={lang}
+                      disabled={busy}
+                      onImport={() => {
+                        setMode('upload');
+                        setSourceFieldsOpen(true);
+                        document.getElementById('course-topic')?.focus();
+                      }}
+                    />
                     {!config?.generationAvailable && (
                       <p className="config-hint">
                         <Info size={14} />
@@ -1551,14 +1793,24 @@ export default function App() {
                       <ArrowLeft size={16} />
                       {t.history}
                     </button>
-                    <button
-                      className="text-button"
-                      onClick={() => showCourse(attempt.courseId)}
-                      disabled={busy}
-                    >
-                      <History size={15} />
-                      {t.retry}
-                    </button>
+                    <div className="result-record-actions">
+                      <button
+                        className="text-button"
+                        onClick={() => showCourse(attempt.courseId)}
+                        disabled={busy}
+                      >
+                        <History size={15} />
+                        {t.retry}
+                      </button>
+                      <button
+                        className="text-button record-delete"
+                        onClick={() => setDeleteTarget(attempt)}
+                        disabled={busy || cleanupBusy}
+                      >
+                        <Trash2 size={15} />
+                        {deletionText.delete}
+                      </button>
+                    </div>
                   </div>
                   <span className="eyebrow">03 / {t.completed}</span>
                   <h1 className="content-title">{attempt.courseTitle}</h1>
@@ -1863,30 +2115,40 @@ export default function App() {
                       {[...attempts]
                         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
                         .map((record) => (
-                          <button
-                            className="history-row"
-                            key={record.id}
-                            onClick={() => showAttempt(record.id)}
-                            disabled={busy}
-                          >
-                            <span className="history-score">
-                              {Math.round((record.correct / record.total) * 100)}
-                              <small>%</small>
-                            </span>
-                            <span className="history-info">
-                              <strong>{record.courseTitle}</strong>
-                              <small>
-                                {date(record.createdAt)}
-                                <span>·</span>
-                                {record.correct} / {record.total} {t.correct}
-                                {record.unknown ? ` · ${record.unknown} ${t.notYet}` : ''}
-                              </small>
-                            </span>
-                            <span className="history-action">
-                              {t.replay}
-                              <ArrowUpRight size={19} />
-                            </span>
-                          </button>
+                          <div className="history-entry" key={record.id}>
+                            <button
+                              className="history-row"
+                              onClick={() => showAttempt(record.id)}
+                              disabled={busy}
+                            >
+                              <span className="history-score">
+                                {Math.round((record.correct / record.total) * 100)}
+                                <small>%</small>
+                              </span>
+                              <span className="history-info">
+                                <strong>{record.courseTitle}</strong>
+                                <small>
+                                  {date(record.createdAt)}
+                                  <span>·</span>
+                                  {record.correct} / {record.total} {t.correct}
+                                  {record.unknown ? ` · ${record.unknown} ${t.notYet}` : ''}
+                                </small>
+                              </span>
+                              <span className="history-action">
+                                {t.replay}
+                                <ArrowUpRight size={19} />
+                              </span>
+                            </button>
+                            <button
+                              className="record-delete history-delete"
+                              onClick={() => setDeleteTarget(record)}
+                              disabled={busy || cleanupBusy}
+                              aria-label={`${deletionText.delete}：${record.courseTitle}`}
+                            >
+                              <Trash2 size={17} />
+                              <span>{deletionText.delete}</span>
+                            </button>
+                          </div>
                         ))}
                     </div>
                   ) : (
@@ -2120,6 +2382,17 @@ export default function App() {
           t={t}
           sourceKind={sourceKind}
           onClose={() => setSource(null)}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteAttemptDialog
+          record={deleteTarget}
+          lang={lang}
+          loadPreview={(id, signal) =>
+            api(`/api/attempts/${encodeURIComponent(id)}/deletion-preview`, { signal })
+          }
+          onConfirm={deleteRecord}
+          onClose={() => setDeleteTarget(null)}
         />
       )}
     </div>

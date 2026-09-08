@@ -1,7 +1,16 @@
 'use client';
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useStageStore, clearStoreForDeletedStage } from '@/lib/store/stage';
+import { markStageDeleted } from '@/lib/utils/deleted-stages';
+import {
+  readClassroomLinks,
+  migrateLegacyClassroomLinks,
+  watchClassroomDeletions,
+  isClassroomDeleted,
+  clearAttemptBrowserContext,
+} from '@/lib/studyloop/classroom-links';
 import { ArrowLeft, ExternalLink, FileCheck2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -14,6 +23,7 @@ import {
 
 export function StudyLoopShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const previousPath = useRef(pathname);
   const { locale } = useI18n();
   const zh = locale.startsWith('zh');
@@ -31,7 +41,7 @@ export function StudyLoopShell({ children }: { children: ReactNode }) {
       const priorPath = previousPath.current;
       previousPath.current = pathname;
       const classroomId = pathname?.match(/^\/classroom\/([^/]+)$/)?.[1];
-      let next = classroomId ? contexts[classroomId] : pending;
+      let next = classroomId ? readClassroomLinks()[classroomId] || contexts[classroomId] : pending;
       if (classroomId && !next && pending && priorPath === '/generation-preview') {
         next = pending;
         contexts[classroomId] = pending;
@@ -50,6 +60,37 @@ export function StudyLoopShell({ children }: { children: ReactNode }) {
       setContext(null);
     }
   }, [pathname]);
+  useEffect(() => {
+    if (!STUDYLOOP_EMBEDDED) return;
+    const leaveDeleted = () => {
+      const stageId = pathname?.match(/^\/classroom\/([^/]+)$/)?.[1];
+      if (!stageId) return;
+      try {
+        if (!isClassroomDeleted(stageId)) return;
+        const link = readClassroomLinks()[stageId];
+        if (link) clearAttemptBrowserContext(link.attemptId);
+      } catch {
+        // Corrupt deletion metadata must not permit an old classroom to save.
+      }
+      useStageStore.getState().bumpGenerationEpoch();
+      markStageDeleted(stageId);
+      clearStoreForDeletedStage(stageId);
+      window.speechSynthesis?.cancel();
+      setContext(null);
+      router.replace('/studio');
+    };
+    const unwatch = watchClassroomDeletions(leaveDeleted);
+    void migrateLegacyClassroomLinks()
+      .then(() => {
+        const stageId = pathname?.match(/^\/classroom\/([^/]+)$/)?.[1];
+        const link = stageId ? readClassroomLinks()[stageId] : null;
+        if (link) setContext(link);
+        leaveDeleted();
+      })
+      .catch(leaveDeleted);
+    leaveDeleted();
+    return unwatch;
+  }, [pathname, router]);
   if (!STUDYLOOP_EMBEDDED) return children;
   const showAttempt = pathname !== '/studio' && context?.returnUrl && context.returnUrl !== '/';
   return (
