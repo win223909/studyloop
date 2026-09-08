@@ -9,6 +9,7 @@ import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } f
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
+import { studyLoopThinkingContext } from './studyloop-thinking';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -361,9 +362,12 @@ export async function callLLM<T extends GenerateTextParams>(
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
       // OpenAI-compatible providers.
-      const result = await thinkingContext.run(effectiveThinking, () =>
-        generateText(injectedParams),
+      const requestThinking = studyLoopThinkingContext(
+        effectiveThinking,
+        source,
+        process.env.NEXT_PUBLIC_STUDYLOOP_EMBEDDED === 'true',
       );
+      const result = await thinkingContext.run(requestThinking, () => generateText(injectedParams));
 
       // Record before validating: every attempt that got this far was billed,
       // including one that fails validation below and one that is handed back
@@ -436,7 +440,12 @@ export function streamLLM<T extends StreamTextParams>(
     applyStudyLoopLimits(wrappedParams),
     effectiveThinking,
   );
-  const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
+  const requestThinking = studyLoopThinkingContext(
+    effectiveThinking,
+    source,
+    process.env.NEXT_PUBLIC_STUDYLOOP_EMBEDDED === 'true',
+  );
+  const result = thinkingContext.run(requestThinking, () => streamText(injectedParams));
 
   return result;
 }

@@ -5,8 +5,27 @@ import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const MAX_EVENT_BYTES = 2 * 1024 * 1024;
+const MAX_ERROR_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 const FAILURE_MESSAGE = 'The built-in classroom request failed. Please try again.';
+// Codes are defined by the pinned runtime's lib/server/api-response.ts. Never
+// forward provider messages, details, stack traces or arbitrary error metadata.
+const ERROR_MESSAGES = Object.freeze({
+  GENERATION_FAILED: 'The classroom content could not be generated. Please retry.',
+  INTERNAL_ERROR: 'The built-in classroom encountered an internal error. Please retry.',
+  UPSTREAM_ERROR: 'The classroom model service could not complete the request. Please retry.',
+  RATE_LIMITED: 'The classroom model service reached its request limit. Please wait and retry.',
+  PARSE_FAILED: 'The classroom model response could not be parsed. Please retry.',
+  MISSING_API_KEY: 'The classroom model API key is not configured. Check Models & settings.',
+  MISSING_PROVIDER: 'The classroom model provider is not configured. Check Models & settings.',
+  MISSING_MODEL: 'The classroom model ID is not configured. Check Models & settings.',
+  INVALID_CREDENTIALS: 'Classroom model authentication failed. Check Models & settings.',
+  INVALID_REQUEST: 'The classroom request was not valid. Please check the request and retry.',
+  MISSING_REQUIRED_FIELD: 'The classroom request is missing a required field. Please retry.',
+  PROVIDER_DISABLED: 'The classroom model provider is disabled. Check Models & settings.',
+  UNAUTHENTICATED: 'The classroom session is not authenticated. Please sign in again.',
+  CONTENT_SENSITIVE: 'The classroom model declined this content. Please review the material.',
+});
 const GENERATION_APIS = new Set([
   '/api/generate/scene-content',
   '/api/generate/scene-outlines-stream',
@@ -168,7 +187,11 @@ export function classifyOpenMAICRequest(req, { publicFiles } = {}) {
   return null;
 }
 
-function safeError(res, status, message = FAILURE_MESSAGE) {
+function knownErrorCode(value) {
+  return typeof value === 'string' && Object.hasOwn(ERROR_MESSAGES, value) ? value : undefined;
+}
+
+function safeError(res, status, message = FAILURE_MESSAGE, code) {
   if (res.destroyed || res.writableEnded) return;
   if (res.headersSent) {
     res.destroy();
@@ -179,7 +202,51 @@ function safeError(res, status, message = FAILURE_MESSAGE) {
   res.removeHeader('content-encoding');
   res.setHeader('cache-control', 'no-store');
   res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify({ error: message }));
+  const errorCode = knownErrorCode(code);
+  res.end(
+    JSON.stringify({
+      error: errorCode ? ERROR_MESSAGES[errorCode] : message,
+      ...(errorCode ? { errorCode } : {}),
+    }),
+  );
+}
+
+async function sanitizedHttpError(response, res, status, isApi) {
+  let errorCode;
+  let timer;
+  try {
+    const contentType = String(response.headers['content-type'] ?? '');
+    const encoding = String(response.headers['content-encoding'] ?? 'identity').toLowerCase();
+    // The proxy requests identity encoding. Unexpected encodings stay generic;
+    // never decompress an untrusted error just to retain an optional code.
+    if (
+      isApi &&
+      /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|\s*$)/i.test(contentType) &&
+      encoding === 'identity' &&
+      !(Number(response.headers['content-length']) > MAX_ERROR_BYTES)
+    ) {
+      timer = setTimeout(() => response.destroy(), 5000);
+      timer.unref?.();
+      const chunks = [];
+      let bytes = 0;
+      for await (const chunk of response) {
+        bytes += chunk.length;
+        if (bytes > MAX_ERROR_BYTES) break;
+        chunks.push(chunk);
+      }
+      if (bytes <= MAX_ERROR_BYTES && response.complete) {
+        const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (payload && typeof payload === 'object' && !Array.isArray(payload))
+          errorCode = knownErrorCode(payload.errorCode);
+      }
+    }
+  } catch {
+    // Truncated, malformed and aborted error bodies have no reliable metadata.
+  } finally {
+    clearTimeout(timer);
+    response.destroy();
+    safeError(res, status, FAILURE_MESSAGE, errorCode);
+  }
 }
 
 function runtimeAddress(value) {
@@ -245,14 +312,27 @@ function eventSanitizer() {
       .join('\n');
     const namedError = lines.some((line) => /^event:\s*error\s*$/.test(line));
     let error = namedError;
+    let errorCode;
     try {
       const payload = JSON.parse(data);
-      error ||= payload?.type === 'error' || Boolean(payload?.error) || payload?.success === false;
+      error ||=
+        payload?.type === 'error' ||
+        Boolean(payload?.error) ||
+        payload?.success === false ||
+        typeof payload?.errorCode === 'string' ||
+        typeof payload?.data?.errorCode === 'string';
+      errorCode = knownErrorCode(payload?.errorCode) ?? knownErrorCode(payload?.data?.errorCode);
     } catch {
       /* Heartbeats and non-JSON data remain valid SSE. */
     }
     if (!error) return frame;
-    const safe = { type: 'error', error: FAILURE_MESSAGE, data: { message: FAILURE_MESSAGE } };
+    const message = errorCode ? ERROR_MESSAGES[errorCode] : FAILURE_MESSAGE;
+    const safe = {
+      type: 'error',
+      error: message,
+      ...(errorCode ? { errorCode } : {}),
+      data: { message },
+    };
     return `${namedError ? 'event: error\n' : ''}data: ${JSON.stringify(safe)}`;
   }
   return new Transform({
@@ -360,8 +440,7 @@ export function createOpenMAICProxy({ runtime, publicFiles } = {}) {
           // Never return an upstream error page/body or follow a redirect carrying
           // internal headers. Even same-origin redirects must stay on allowed paths.
           if (status >= 400) {
-            response.destroy();
-            safeError(res, status);
+            void sanitizedHttpError(response, res, status, classification.kind === 'api');
             return;
           }
           if (status >= 300 && status !== 304) {

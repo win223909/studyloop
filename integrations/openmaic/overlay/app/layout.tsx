@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import './globals.css';
-import '@openmaic/renderer/fonts.css';
+// Embedded classrooms use the bundled UI fonts and platform fallbacks. The
+// renderer font stylesheet registers remote faces outside StudyLoop's CSP.
 import 'animate.css';
 import 'katex/dist/katex.min.css';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
@@ -12,7 +13,6 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StudyLoopShell } from '@/components/studyloop-shell';
 import './studyloop.css';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
-import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
@@ -51,9 +51,9 @@ export default function RootLayout({
           <I18nProvider>
             <ServerProvidersInit />
             <ProSwapWatcher />
-            <StudyLoopShell>
-              <AccessCodeGuard>{children}</AccessCodeGuard>
-            </StudyLoopShell>
+            {/* StudyLoop authenticates every classroom request at its front door.
+                The upstream access-code flow is not part of this deployment. */}
+            <StudyLoopShell>{children}</StudyLoopShell>
             <Toaster position="top-center" />
             {/* After the Toaster: this one raises a toast on mount when
                 persistence is already broken, and a toast raised before its

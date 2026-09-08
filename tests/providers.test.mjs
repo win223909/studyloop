@@ -223,7 +223,12 @@ test('independent review rejects a wrong key, ambiguous question, missing eviden
     if (kind === 'teaching') teaching.valid = false;
     if (kind === 'missing-review') review.reviews.pop();
     if (kind === 'forged-source') bank.questions[0].sourceIds = ['invented'];
-    const options = { env, fetch: mockProvider([outline, bank, review, teaching]) };
+    const options = {
+      env,
+      fetch: mockProvider(
+        kind === 'forged-source' ? [outline, bank, bank] : [outline, bank, review, teaching],
+      ),
+    };
     const plan = await createPlan(input, options);
     await assert.rejects(
       () => generateCourse(plan, { objectives: plan.objectives, questionCount: 4 }, options),

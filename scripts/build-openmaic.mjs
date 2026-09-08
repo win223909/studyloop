@@ -12,6 +12,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { patchOpenMAICProvider } from './openmaic-provider-patch.mjs';
 import {
   cleanBuildEnvironment,
   createPnpmShim,
@@ -82,10 +83,12 @@ export async function buildOpenMAIC({ force = false } = {}) {
   ]);
   const implementationHash = filesHash(
     await Promise.all(
-      ['build-openmaic.mjs', 'openmaic-build-utils.mjs'].map(async (name) => ({
-        path: name,
-        data: await readFile(path.join(root, 'scripts', name)),
-      })),
+      ['build-openmaic.mjs', 'openmaic-build-utils.mjs', 'openmaic-provider-patch.mjs'].map(
+        async (name) => ({
+          path: name,
+          data: await readFile(path.join(root, 'scripts', name)),
+        }),
+      ),
     ),
   );
   const buildHash = sha256(
@@ -141,6 +144,8 @@ export async function buildOpenMAIC({ force = false } = {}) {
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, file.data);
     }
+    const providerFile = path.join(stage, 'lib/ai/providers.ts');
+    await writeFile(providerFile, patchOpenMAICProvider(await readFile(providerFile, 'utf8')));
     // Reuse dependency bytes only. All application source comes from the
     // verified archive and overlay, never from an existing local checkout.
     const packageRoots = entries

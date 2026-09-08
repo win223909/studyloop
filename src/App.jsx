@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import Logo from './Brand.jsx';
+import { createSubmissionKeys } from './submission-keys.js';
 import ModelSettings from './ModelSettings.jsx';
 import TextbookSource, { SourceMetadataFields } from './TextbookSource.jsx';
 import {
@@ -89,6 +90,17 @@ const COPY = {
     suggestionHint: '点击建议只会填入主题，你可以编辑后再整理大纲。',
     uploadChapter: '上传这一章',
     pasteCourse: '粘贴课程资料',
+    savedRefreshPending: '课程或答卷已保存，但列表暂时无法刷新。请重试刷新，无需重新生成或提交。',
+    refreshLibrary: '刷新课程与记录',
+    failedStep: '失败步骤',
+    diagnosticId: '排查编号',
+    generationPhases: {
+      outline: '课程大纲',
+      questions: '题目生成',
+      answer_review: '答案复核',
+      teaching_review: '讲解复核',
+      search: '资料检索',
+    },
     configNotice: '示例课程可以直接练习。配置模型 API 后，就能根据自己的主题或资料生成课程。',
     configure: '配置指南',
     courses: '我的课程',
@@ -290,6 +302,18 @@ const COPY = {
       'Selecting a suggestion only fills the topic. Edit it if needed, then prepare the outline.',
     uploadChapter: 'Upload this chapter',
     pasteCourse: 'Paste course material',
+    savedRefreshPending:
+      'The course or answer sheet was saved, but the lists could not be refreshed. Retry the refresh; there is no need to generate or submit again.',
+    refreshLibrary: 'Refresh courses and history',
+    failedStep: 'Failed step',
+    diagnosticId: 'Diagnostic ID',
+    generationPhases: {
+      outline: 'Course outline',
+      questions: 'Question generation',
+      answer_review: 'Answer review',
+      teaching_review: 'Teaching review',
+      search: 'Source search',
+    },
     configNotice:
       'Example courses are ready to practice. Configure a model API to build courses from your own topics and materials.',
     configure: 'Setup guide',
@@ -561,6 +585,14 @@ export default function App() {
   const [courses, setCourses] = useState([]);
   const [attempts, setAttempts] = useState([]);
   const [busy, setBusy] = useState(false);
+  const activeWorkRef = useRef(null);
+  const submissionKeysRef = useRef(null);
+  if (!submissionKeysRef.current) submissionKeysRef.current = createSubmissionKeys();
+  const navigationEpochRef = useRef(0);
+  const libraryLoadRef = useRef(0);
+  const libraryRefreshRef = useRef(0);
+  const [libraryRefreshPending, setLibraryRefreshPending] = useState(false);
+  const [libraryRefreshing, setLibraryRefreshing] = useState(false);
   const [planRequest, setPlanRequest] = useState(null);
   const planRequestRef = useRef(false);
   const composerBusy = busy || Boolean(planRequest);
@@ -611,23 +643,56 @@ export default function App() {
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   const work = async (fn) => {
+    if (activeWorkRef.current) return;
+    const operation = { epoch: navigationEpochRef.current };
+    activeWorkRef.current = operation;
+    const current = () =>
+      activeWorkRef.current === operation && operation.epoch === navigationEpochRef.current;
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      await fn();
+      await fn({ current, transition: (next, id) => navigate(next, id, operation) });
     } catch (err) {
-      setError(err);
+      if (current()) setError(err);
     } finally {
-      setBusy(false);
+      if (activeWorkRef.current === operation) {
+        activeWorkRef.current = null;
+        setBusy(false);
+      }
     }
   };
   const loadLibrary = async () => {
-    const [library, records] = await Promise.all([api('/api/courses'), api('/api/attempts')]);
-    setCourses(library.courses);
-    setAttempts(records.attempts);
+    const request = ++libraryLoadRef.current;
+    const [library, records] = await Promise.all([
+      api('/api/courses', { signal: AbortSignal.timeout(15000) }),
+      api('/api/attempts', { signal: AbortSignal.timeout(15000) }),
+    ]);
+    if (request === libraryLoadRef.current) {
+      setCourses(library.courses);
+      setAttempts(records.attempts);
+    }
     return { courses: library.courses, attempts: records.attempts };
   };
+  const refreshSavedLibrary = async () => {
+    const refresh = ++libraryRefreshRef.current;
+    setLibraryRefreshing(true);
+    try {
+      await loadLibrary();
+      if (refresh === libraryRefreshRef.current) setLibraryRefreshPending(false);
+    } catch {
+      if (refresh === libraryRefreshRef.current) setLibraryRefreshPending(true);
+    } finally {
+      if (refresh === libraryRefreshRef.current) setLibraryRefreshing(false);
+    }
+  };
+  const rememberCourse = (saved) =>
+    setCourses((previous) => [
+      { ...saved, questionCount: saved.questions?.length ?? saved.questionCount },
+      ...previous.filter((item) => item.id !== saved.id),
+    ]);
+  const rememberAttempt = (saved) =>
+    setAttempts((previous) => [saved, ...previous.filter((item) => item.id !== saved.id)]);
   useEffect(() => {
     let active = true;
     (async () => {
@@ -681,7 +746,20 @@ export default function App() {
       document.body.style.overflow = oldOverflow;
     };
   }, [source]);
-  const navigate = (next, resultId) => {
+  const navigate = (next, resultId, operation) => {
+    if (
+      operation &&
+      (activeWorkRef.current !== operation || operation.epoch !== navigationEpochRef.current)
+    )
+      return;
+    if (!operation) {
+      navigationEpochRef.current += 1;
+      activeWorkRef.current = null;
+      planRequestRef.current = false;
+      setBusy(false);
+      setPlanRequest(null);
+      setOpeningClassroom(false);
+    }
     if (speechSupported) window.speechSynthesis.cancel();
     setSpeaking(null);
     if (next === 'classrooms') {
@@ -709,21 +787,23 @@ export default function App() {
       minute: '2-digit',
     }).format(new Date(value));
   const showCourse = async (id) =>
-    work(async () => {
+    work(async ({ current, transition }) => {
       const data = await api(`/api/courses/${encodeURIComponent(id)}`);
+      if (!current()) return;
       setCourse(data.course);
       setAnswers({});
       setQuestionIndex(0);
-      navigate('quiz');
+      transition('quiz');
     });
   const showAttempt = async (id) =>
-    work(async () => {
+    work(async ({ current, transition }) => {
       const data = await api(`/api/attempts/${encodeURIComponent(id)}`);
+      if (!current()) return;
       setAttempt(data.attempt);
       setOpenResults({});
       setPracticeAnswers({});
       setPracticeResults({});
-      navigate('results', data.attempt.id);
+      transition('results', data.attempt.id);
     });
   const updatePendingCleanups = (fallback = false) => {
     try {
@@ -878,24 +958,22 @@ export default function App() {
       setCleanupBusy(false);
     }
   };
-  const refreshAfterDeletion = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await refreshDeletionLibrary();
-    } catch {
-      setDeletionRefreshPending(true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const refreshAfterDeletion = () =>
+    work(async () => {
+      try {
+        await refreshDeletionLibrary();
+      } catch {
+        setDeletionRefreshPending(true);
+      }
+    });
   const makePlan = async (event) => {
     event.preventDefault();
     if (composerBusy || planRequestRef.current) return;
-    planRequestRef.current = true;
+    const requestToken = {};
+    planRequestRef.current = requestToken;
     const submitted = { topic: topic.trim(), mode };
     try {
-      await work(async () => {
+      await work(async ({ current, transition }) => {
         if (topic.trim().length < 2) throw new Error(t.topicRequired);
         if (mode === 'text' && !material.trim()) throw new Error(t.textRequired);
         if (mode === 'text' && (material.trim().length < 400 || material.trim().length > 36000))
@@ -913,23 +991,30 @@ export default function App() {
           if (sourceTitle.trim()) body.set('sourceTitle', sourceTitle.trim());
           if (sourceUrl.trim()) body.set('sourceUrl', sourceUrl.trim());
         }
-        setPlanRequest(submitted);
+        setPlanRequest({ ...submitted, requestToken });
+        const submission = submissionKeysRef.current.prepare('/api/plans', body);
         let data;
         try {
-          data = await api('/api/plans', { method: 'POST', body });
+          data = await api('/api/plans', {
+            method: 'POST',
+            body,
+            headers: { 'Idempotency-Key': submission.key },
+          });
         } catch (cause) {
           cause.planRequest = submitted;
           if (cause.sourceSearch?.topic !== submitted.topic || submitted.mode !== 'search')
             delete cause.sourceSearch;
           throw cause;
         }
+        submissionKeysRef.current.complete('/api/plans', submission);
+        if (!current()) return;
         setPlan(data.plan);
         setObjectives(data.plan.objectives);
-        navigate('plan');
+        transition('plan');
       });
     } finally {
-      planRequestRef.current = false;
-      setPlanRequest(null);
+      if (planRequestRef.current === requestToken) planRequestRef.current = false;
+      setPlanRequest((previous) => (previous?.requestToken === requestToken ? null : previous));
     }
   };
   const recoverSourceInput = (nextMode, suggestedTopic) => {
@@ -950,37 +1035,52 @@ export default function App() {
     );
   };
   const makeCourse = () =>
-    work(async () => {
+    work(async ({ current, transition }) => {
       if (!objectives.length) throw new Error(t.objectiveRequired);
+      const body = { planId: plan.id, objectives, questionCount };
+      const submission = submissionKeysRef.current.prepare('/api/courses', body);
       const data = await api('/api/courses', {
         method: 'POST',
-        body: { planId: plan.id, objectives, questionCount },
+        body,
+        headers: { 'Idempotency-Key': submission.key },
       });
-      setCourse(data.course);
-      setAnswers({});
-      setQuestionIndex(0);
-      await loadLibrary();
-      navigate('quiz');
+      submissionKeysRef.current.complete('/api/courses', submission);
+      rememberCourse(data.course);
+      if (current()) {
+        setCourse(data.course);
+        setAnswers({});
+        setQuestionIndex(0);
+        transition('quiz');
+      }
+      void refreshSavedLibrary();
     });
   const submit = () =>
-    work(async () => {
+    work(async ({ current, transition }) => {
       if (course.questions.some((q) => answers[q.id] === undefined)) throw new Error(t.finishAll);
-      const data = await api(`/api/courses/${encodeURIComponent(course.id)}/attempts`, {
+      const path = `/api/courses/${encodeURIComponent(course.id)}/attempts`;
+      const body = { answers };
+      const submission = submissionKeysRef.current.prepare(path, body);
+      const data = await api(path, {
         method: 'POST',
-        body: { answers },
+        body,
+        headers: { 'Idempotency-Key': submission.key },
       });
-      setAttempt(data.attempt);
-      setOpenResults({});
-      setPracticeAnswers({});
-      setPracticeResults({});
-      await loadLibrary();
-      navigate('results', data.attempt.id);
+      submissionKeysRef.current.complete(path, submission);
+      rememberAttempt(data.attempt);
+      if (current()) {
+        setAttempt(data.attempt);
+        setOpenResults({});
+        setPracticeAnswers({});
+        setPracticeResults({});
+        transition('results', data.attempt.id);
+      }
+      void refreshSavedLibrary();
     });
   const importCourse = async (event) => {
     const selected = event.target.files?.[0];
     event.target.value = '';
     if (!selected) return;
-    work(async () => {
+    work(async ({ current, transition }) => {
       if (selected.size > 2 * 1024 * 1024) throw new Error(t.importTooBig);
       let parsed;
       try {
@@ -988,24 +1088,29 @@ export default function App() {
       } catch {
         throw new Error(t.importError);
       }
+      if (!current()) return;
       const data = await api('/api/import', { method: 'POST', body: parsed });
-      await loadLibrary();
       if (data.course) {
-        setCourse(data.course);
-        setAnswers({});
-        setQuestionIndex(0);
-        navigate('quiz');
+        rememberCourse(data.course);
+        if (current()) {
+          setCourse(data.course);
+          setAnswers({});
+          setQuestionIndex(0);
+          transition('quiz');
+        }
       }
-      setNotice(t.importOk);
+      if (current()) setNotice(t.importOk);
+      void refreshSavedLibrary();
     });
   };
   const getBrief = () =>
-    work(async () => {
+    work(async ({ current }) => {
       const data = await api(`/api/attempts/${encodeURIComponent(attempt.id)}/openmaic`);
+      if (!current()) return;
       downloadText(data.filename || 'studyloop-classroom-brief.md', data.markdown);
     });
   const openClassroom = () =>
-    work(async () => {
+    work(async ({ current }) => {
       setOpeningClassroom(true);
       try {
         const data = await api(
@@ -1014,22 +1119,29 @@ export default function App() {
             method: 'POST',
           },
         );
+        if (!current()) return;
         const url = new URL(data.url, window.location.origin);
         if (url.origin !== window.location.origin || url.pathname !== '/studyloop-launch')
           throw new Error(t.openmaicInvalidLink);
         if (speechSupported) window.speechSynthesis.cancel();
         window.location.assign(url.pathname + url.search);
       } finally {
-        setOpeningClassroom(false);
+        if (current()) setOpeningClassroom(false);
       }
     });
   const gradePractice = (id) =>
-    work(async () => {
+    work(async ({ current }) => {
       if (practiceAnswers[id] === undefined) throw new Error(t.selectAnswer);
-      const result = await api(
-        `/api/attempts/${encodeURIComponent(attempt.id)}/practice/${encodeURIComponent(id)}`,
-        { method: 'POST', body: { answer: practiceAnswers[id] } },
-      );
+      const path = `/api/attempts/${encodeURIComponent(attempt.id)}/practice/${encodeURIComponent(id)}`;
+      const body = { answer: practiceAnswers[id] };
+      const submission = submissionKeysRef.current.prepare(path, body);
+      const result = await api(path, {
+        method: 'POST',
+        body,
+        headers: { 'Idempotency-Key': submission.key },
+      });
+      submissionKeysRef.current.complete(path, submission);
+      if (!current()) return;
       setPracticeResults((old) => ({ ...old, [id]: result }));
     });
   const readLesson = (result) => {
@@ -1064,8 +1176,9 @@ export default function App() {
       if (found.length) setSource(found);
       return;
     }
-    work(async () => {
+    work(async ({ current }) => {
       const data = await api(`/api/courses/${encodeURIComponent(courseId)}`);
+      if (!current()) return;
       setCourse(data.course);
       setSource(data.course.sources.filter((s) => ids?.includes(s.id)));
     });
@@ -1182,6 +1295,19 @@ export default function App() {
           </button>
         </header>
         <main id="main-content" className={`main-content view-${view}`} ref={mainRef}>
+          {libraryRefreshPending && (
+            <div className="cleanup-notice library-refresh-notice" role="status">
+              <Info size={18} />
+              <p>{t.savedRefreshPending}</p>
+              <button
+                className="secondary-button"
+                onClick={refreshSavedLibrary}
+                disabled={libraryRefreshing}
+              >
+                {t.refreshLibrary}
+              </button>
+            </div>
+          )}
           {cleanupPending && (
             <div className="cleanup-notice" role="status">
               {cleanupBusy ? <LoaderCircle className="spin" size={18} /> : <Info size={18} />}
@@ -1219,6 +1345,18 @@ export default function App() {
                     : t.error}
                 </strong>
                 <p>{formatApiError(error, lang)}</p>
+                {error.generation && (
+                  <dl className="generation-diagnostics">
+                    <div>
+                      <dt>{t.failedStep}</dt>
+                      <dd>{t.generationPhases[error.generation.phase]}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticId}</dt>
+                      <dd>{error.generation.requestId}</dd>
+                    </div>
+                  </dl>
+                )}
                 {isSourceCoverageError(error) && error.planRequest?.mode === 'search' && (
                   <div className="source-recovery">
                     <p className="source-recovery-topic">
@@ -1716,6 +1854,7 @@ export default function App() {
                           <label className="objective-option" key={objective}>
                             <input
                               type="checkbox"
+                              disabled={busy}
                               checked={objectives.includes(objective)}
                               onChange={(event) =>
                                 setObjectives((current) =>
@@ -1738,6 +1877,7 @@ export default function App() {
                           {[4, 6, 8].map((count) => (
                             <button
                               key={count}
+                              disabled={busy}
                               className={questionCount === count ? 'selected' : ''}
                               aria-pressed={questionCount === count}
                               onClick={() => setQuestionCount(count)}
@@ -1821,6 +1961,7 @@ export default function App() {
                               >
                                 <input
                                   type="radio"
+                                  disabled={busy}
                                   name={`answer-${q.id}`}
                                   value={index}
                                   checked={answers[q.id] === index}
@@ -1840,6 +1981,7 @@ export default function App() {
                             >
                               <input
                                 type="radio"
+                                disabled={busy}
                                 name={`answer-${q.id}`}
                                 checked={answers[q.id] === 'unknown'}
                                 onChange={() =>
@@ -1882,6 +2024,7 @@ export default function App() {
                             {questionIndex < course.questions.length - 1 ? (
                               <button
                                 className="primary-button"
+                                disabled={busy}
                                 onClick={() => setQuestionIndex((index) => index + 1)}
                               >
                                 {t.next}
@@ -1923,6 +2066,7 @@ export default function App() {
                             {course.questions.map((item, index) => (
                               <button
                                 key={item.id}
+                                disabled={busy}
                                 aria-label={`${t.question} ${index + 1} · ${answers[item.id] === undefined ? t.unanswered : t.answered}`}
                                 aria-current={index === questionIndex ? 'step' : undefined}
                                 className={`${answers[item.id] !== undefined ? 'answered' : ''} ${index === questionIndex ? 'current' : ''}`}
@@ -2126,6 +2270,7 @@ export default function App() {
                                       >
                                         <input
                                           type="radio"
+                                          disabled={busy}
                                           name={`practice-${result.questionId}`}
                                           checked={
                                             practiceAnswers[result.questionId] === choiceIndex
@@ -2154,6 +2299,7 @@ export default function App() {
                                     >
                                       <input
                                         type="radio"
+                                        disabled={busy}
                                         name={`practice-${result.questionId}`}
                                         checked={practiceAnswers[result.questionId] === 'unknown'}
                                         onChange={() => {

@@ -276,7 +276,12 @@ async function browserSnapshot() {
   }
   return {
     databases: JSON.parse(JSON.stringify(databases)),
-    local: { ...localStorage },
+    // The embedded shell hydrates managed provider settings asynchronously,
+    // independently of cleanup. Compare classroom data, including every quiz,
+    // device, link and tombstone key, without racing that account preference.
+    local: Object.fromEntries(
+      Object.entries(localStorage).filter(([key]) => key !== 'maic:account:settings-storage'),
+    ),
     session: { ...sessionStorage },
   };
 }

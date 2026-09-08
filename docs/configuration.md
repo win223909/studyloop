@@ -80,6 +80,22 @@ If a complete question bank is cut short, increase **Maximum output tokens** in 
 
 如果完整题库提示输出截断，可在高级参数中调高**最大输出 token 数**（不超过模型限制），或减少题数。MiniMax-M3 生成六题时可尝试 `LLM_MAX_OUTPUT_TOKENS=16384`、`LLM_TIMEOUT_MS=180000`，再按实际结果调整；更长输出会增加耗时和用量，不能保证任意请求都能完成。简短的连接测试通过，不代表完整题库的输出预算已足够。
 
+**MiniMax-M3 authoring adaptation:** with the OpenAI-compatible protocol, an exact model ID of `MiniMax-M3`, and hostname `api.minimax.cn` or `api.minimax.io`, StudyLoop automatically sends `thinking: {"type":"disabled"}` for question-bank authoring (`questions`), including recovery batches. This targets cases where reasoning consumes the completion budget before any course JSON is returned. `reasoning_split=true` remains enabled; it separates reasoning output and does not itself disable thinking, as explained in the [official MiniMax documentation](https://platform.minimax.io/docs/api-reference/text-openai-api#thinking-control).
+
+**MiniMax-M3 出题适配：** 使用 OpenAI 兼容协议、模型名精确为 `MiniMax-M3`、接口主机为 `api.minimax.cn` 或 `api.minimax.io` 时，StudyLoop 在题库出题阶段（`questions`，含恢复批次）自动发送 `thinking: {"type":"disabled"}`，针对推理耗尽输出预算、正文 JSON 尚未返回就截断的情况。仍发送 `reasoning_split=true`；它只分离推理输出，本身不会关闭思考。参数含义见上方官方文档。
+
+The bundled OpenMAIC classroom applies the same `thinking: {"type":"disabled"}` setting specifically to scene content and scene actions (`scene-content` / `scene-actions`). This classroom adaptation requires embedded mode, the exact model ID `MiniMax-M3`, and an HTTPS POST to `https://api.minimax.cn/v1/chat/completions` or `https://api.minimax.io/v1/chat/completions`, without a custom port, URL-embedded username/password, query, or fragment. It does not add `reasoning_split` to the classroom request or change its token limit, timeout, or cancellation handling.
+
+内置 OpenMAIC 对场景内容和讲解动作（`scene-content`／`scene-actions`）同样发送 `thinking: {"type":"disabled"}`。课堂适配要求内置模式、模型名精确为 `MiniMax-M3`，并向 `https://api.minimax.cn/v1/chat/completions` 或 `https://api.minimax.io/v1/chat/completions` 发起 HTTPS POST；自定义端口、URL 内嵌用户名／密码、查询参数或片段地址不适用。课堂请求不会因此新增 `reasoning_split`，其 token 上限、超时与取消处理保持原状。
+
+**Bounded M3 review recovery:** the first independent review retains its normal thinking behaviour. Only with the OpenAI-compatible protocol, a normalized base of exactly `https://api.minimax.cn/v1` or `https://api.minimax.io/v1`, and an effective review model of exactly `MiniMax-M3` (`LLM_REVIEW_MODEL`, falling back to `LLM_MODEL`), a first `model_format`, `model_truncated`, or `provider_timeout` failure can retry the same `answer_review` or `teaching_review` stage with thinking disabled. `reasoning_split=true` remains enabled. This uses the existing second attempt, keeps the already authored bank, and does not restart authoring. A second failure stops the request; a semantic rejection is never retried into acceptance.
+
+**M3 复核的有限恢复：** 首次独立复核保持正常思考。仅使用 OpenAI 兼容协议、规范化根地址精确为 `https://api.minimax.cn/v1` 或 `https://api.minimax.io/v1`，且实际复核模型精确为 `MiniMax-M3`（优先 `LLM_REVIEW_MODEL`，未填则用 `LLM_MODEL`）时，首次出现 `model_format`、`model_truncated` 或 `provider_timeout`，可在同一个 `answer_review` 或 `teaching_review` 阶段关闭思考后重试；继续发送 `reasoning_split=true`。这使用原有的第二次机会，保留本次已生成题库，不重新整份出题。第二次失败即停止，语义复核拒绝不会被重试放行。
+
+Outline generation, classroom grading, agent profiles, chat, other model IDs and other endpoints keep their existing thinking defaults. Other providers retain their existing format-only review retry; their review timeouts or truncated outputs do not gain an automatic retry. These adjustments add no configuration field or higher call ceiling. Complete structural checks and the question bank's answer/evidence reviews remain required; recovery does not guarantee success or create a durable resume checkpoint.
+
+大纲、课堂评分、角色生成、聊天、其他模型名及其他接口保持原有思考默认值。其他服务商仍只有既有的复核格式错误重试，复核超时或截断不会因此自动重试。这些调整不增加配置项或调用上限，完整结构检查及题库的答案／证据复核继续执行；恢复不保证成功，也不会建立跨进程续跑存档。
+
 ### Native Anthropic / 原生 Anthropic
 
 ```dotenv
@@ -215,9 +231,26 @@ You may edit `private-settings/settings.env` privately on the host and restart t
 | `DAILY_GENERATION_LIMIT`     | `20`                      | Shared daily cap on plan, question-bank, and classroom generation requests                                                                                   |
 | `MAX_CONCURRENT_GENERATIONS` | `2`                       | Concurrent generation requests for the instance                                                                                                              |
 
-Creating a plan normally uses one model call. Keyword search may add one focused retrieval round and a second model coverage check, for at most two planning calls. Creating the question bank normally uses three more calls (authoring, blind answer review, and explanation/evidence review). One UI action can therefore consume several model calls; the daily limit is an application request cap, **not a currency budget**. A classroom has at most six scenes and commonly uses two generation requests per scene after its outline. Classroom requests share this allowance, so the default 20 does not mean 20 classrooms. Failed requests also consume the application's daily allowance. Set financial limits in your provider console as well. A review model shares the primary provider's base URL and key; cross-provider review routing is a future feature.
+Creating a plan normally uses one model call; keyword search may add a focused retrieval round and another coverage check. Creating a question bank normally uses three calls: authoring, blind answer review, and explanation/evidence review. Bounded JSON-format retries or authoring recovery can add calls and latency; [recovery rules](troubleshooting.md) explain when a request is retried and when it must fail. One UI action can consume several model calls; the daily limit is an application request cap, **not a currency budget**. A classroom has at most six scenes and commonly uses two generation requests per scene after its outline. Classroom requests share this allowance, so the default 20 does not mean 20 classrooms. Failed new requests also consume the application's daily allowance; replaying an already saved result with its original idempotency key does not generate again. Set financial limits in your provider console as well. A review model shares the primary provider's base URL and key; cross-provider review routing is a future feature.
 
-生成大纲通常使用一次模型调用；关键词覆盖不足时，最多增加一轮补查和一次模型核对，大纲阶段合计最多两次。生成题库通常再调用三次，分别用于出题、独立解答复核、解析与教学依据复核。课堂最多六个场景，生成大纲后每个场景通常还有两次生成请求，额度与题库共用。每日限制按应用请求计数，默认 20 次不等于 20 门课堂，也不等于金额上限；失败请求也计入应用额度。费用上限需要同时在服务商控制台设置。复核模型与主模型共用服务商、地址和密钥，目前不支持单独跨服务商配置。
+生成大纲通常使用一次模型调用；关键词覆盖不足时，可增加一轮补查与一次核对。题库通常调用三次，分别用于出题、独立解答复核、解析与教学依据复核；有限的格式重试或出题恢复会增加调用与等待，具体边界见[故障排查](troubleshooting.md)。课堂最多六个场景，生成大纲后每个场景通常还有两次生成请求，额度与题库共用。每日限制按应用请求计数，默认 20 次不等于 20 门课堂，也不等于金额上限；失败的新请求也计入应用额度，使用原幂等编号取回已经保存的结果则不重新生成。费用上限需要同时在服务商控制台设置。复核模型与主模型共用服务商、地址和密钥，目前不支持单独跨服务商配置。
+
+The following bounds are **model requests per application request**, including permitted recovery. Question-bank counts exclude the earlier outline and any separate OpenMAIC classroom requests. Manual retries are new application requests unless they replay an already saved result with the original key.
+
+下表是**每次应用请求内的模型调用上限**，包含允许的恢复。题库数量不包含之前的大纲和另外创建的互动课堂；手动重试属于新应用请求，使用原编号取回已保存结果的情况除外。
+
+| Path / 路径                                                               | Maximum model calls / 最多模型调用 |
+| ------------------------------------------------------------------------- | ---------------------------------- |
+| Outline from text/upload / 文字或上传大纲                                 | 2                                  |
+| Search outline, including its one follow-up search / 搜索大纲，含一轮补查 | 4                                  |
+| Bank without authoring fallback / 未触发出题分批恢复的题库                | 5                                  |
+| 4-question bank with authoring fallback / 4 题分批恢复                    | 7                                  |
+| 6-question bank with authoring fallback / 6 题分批恢复                    | 8                                  |
+| 8-question bank with authoring fallback / 8 题分批恢复                    | 9                                  |
+
+A normal bank uses three calls. Its two reviews may each retry a JSON-format error once; the scoped official M3 review recovery above also permits a first timeout or truncation within that same two-call limit. Authoring fallback applies only after the first response fails with `model_format`, `model_truncated`, or `bank_invalid`; source insufficiency, a failed recovery batch or a rejected review stops the request. The upper bound is one failed first author call, one call per two-question batch, and at most two calls for each of the two reviews. Each outline coverage check uses at most two calls, and search has at most two coverage checks. These are ceilings, not targets or guarantees that recovery will succeed.
+
+普通题库使用三次调用；两类复核各可因 JSON 格式错误重试一次，上述精确范围内的官方 M3 复核还允许首次超时或截断恢复，同样不超过该阶段两次。分批恢复只在首次出题返回 `model_format`、`model_truncated` 或 `bank_invalid` 时触发；资料不足、恢复批失败或复核拒绝仍停止。上限为：首次失败出题一次、每批两题各一次、两类复核各最多两次。每轮大纲核对最多两次模型调用，搜索最多两轮核对。这些是上限，不是每次都会使用的次数，也不保证恢复成功。
 
 ## Optional search and OpenMAIC / 可选搜索与课堂
 
@@ -241,6 +274,8 @@ Wikipedia 属于百科资料，不保证覆盖学校章节、特定教材版本�
 
 ## Common problems / 常见问题
 
+For phase/request-ID diagnostics, bounded format recovery, grading failures and `Idempotency-Key`, see [generation troubleshooting](troubleshooting.md). / 阶段与请求编号、有限格式恢复、评分失败及幂等重试见[生成故障排查](troubleshooting.md)。
+
 | Symptom                                                   | Check                                                                                                                                               |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Examples work, generation is unavailable                  | Save a model ID and key in the local form, or explicitly enable keyless mode for a local server; manual file edits need a restart                   |
@@ -262,8 +297,8 @@ Wikipedia 属于百科资料，不保证覆盖学校章节、特定教材版本�
 
 **MiniMax 返回 HTTP 400、`unknown model`（2013）：** 先核对“主模型 ID”，把误填的账户编号／Group ID 改为账户可用的模型名称，例如 `MiniMax-M3`；如果单独填写了复核模型，也要检查。确认地址和密钥属于同一区域，测试修正后的配置，再点击保存；测试本身不会保存。仅凭这个错误不能判定密钥失效。
 
-Generation is a synchronous HTTP operation in this alpha, not a durable background job. A follow-up source search with two planning calls, or three sequential bank calls on a slow model, can exceed a reverse proxy's request timeout even when each model call is within its own timeout. Check the course library after reconnecting before retrying: the server may have finished after the browser lost its connection. There is no automatic job resume or exactly-once retry guarantee. Start with direct local access and a small bank when diagnosing this.
+Generation is a synchronous HTTP operation in this alpha, not a durable background job. Search, sequential model reviews and recovery calls can exceed a reverse proxy's request timeout even when each model call is within its own timeout. Check the course library after reconnecting: the server may have saved the result after the browser lost its connection. API clients can retry supported writes with the same session, `Idempotency-Key` and effective content to retrieve that saved result. A process failure before saving can still require new model work; there is no durable job resume. Start with direct local access and a small bank when diagnosing this.
 
-本版生成使用同步 HTTP 请求，没有可恢复的后台任务。补查检索加两次大纲核对，或慢模型的三轮题库调用，都可能超过反向代理的请求时限；断线后先检查课程库再重试，避免服务端已经生成完成却重复消耗额度。可先在本地直连环境用较少题数排查。
+本版生成使用同步 HTTP 请求，没有可恢复的后台任务。检索、顺序复核与恢复调用都可能超过反向代理时限；断线后先检查课程库。API 客户端可用相同会话、`Idempotency-Key` 和有效请求内容取回已保存结果；进程在保存前退出仍可能需要重新调用模型。可先在本地直连环境用较少题数排查。
 
 Do not paste `.env`, authorization headers, or full student work into a public issue. Report the protocol, redacted base hostname, model ID, error category, and a synthetic reproduction instead.

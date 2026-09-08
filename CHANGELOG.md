@@ -2,6 +2,11 @@
 
 ## Unreleased — 2026-09-08
 
+- Recover malformed or truncated model output within bounded stage retries and small authoring batches; preserve strict source, answer and explanation checks and never save partial banks.
+- Adapt official MiniMax-M3 authoring and embedded scene generation to avoid exhausting the output budget on reasoning; retry a failed M3 review once without repeating authoring.
+- Make interrupted submissions replay their original saved result, prevent duplicate work on repeated clicks, and show safe failure stages and request identifiers.
+- Preserve classroom answers when grading fails, require valid scores before saving, and keep embedded fonts and access checks within the local StudyLoop deployment.
+- Validate classroom playback actions before returning scenes and confirm browser persistence before navigating or reporting generation complete.
 - Add owned learning-record deletion with a scope preview, shared-course preservation, local file cleanup, and resumable browser classroom cleanup.
 - Add an official Smart Education textbook entry and optional source title/URL for chapter imports; retain provenance throughout course generation without fetching authenticated pages.
 - Bundle the real OpenMAIC classic classroom from pinned upstream commit `dfebbcf33f3a56064129903faeab70a9e4243146`, with a visible source overlay, integrity-checked build, standalone runtime, source archive, and preserved license notices.

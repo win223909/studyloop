@@ -34,9 +34,9 @@ The upload limit is 8 MB; PDFs must have at most 60 pages. Extracted or pasted t
 
 上传最大 8 MB，PDF 最多 60 页；文字内容需为 400–36,000 字符。本版不解析纯扫描件、图片、音视频，也没有直接抓取任意网址的入口。扫描件可以先 OCR，再上传可提取文字的 PDF。
 
-Keyword search first retrieves Wikipedia articles, or web excerpts if Brave Search is configured, and asks the model whether they support the requested topic and level. If coverage is insufficient, the model can suggest up to three concept names or synonyms for one automatic follow-up search, followed by one more coverage check. Planning uses at most two model calls, so this path may take longer and cost more. If the evidence still does not support a course, use a clickable narrower-topic suggestion or switch to pasted/uploaded material; StudyLoop does not fill gaps with invented teaching content.
+Keyword search first retrieves Wikipedia articles, or web excerpts if Brave Search is configured, and asks the model whether they support the requested topic and level. If coverage is insufficient, the model can suggest up to three concept names or synonyms for one automatic follow-up search, followed by one more coverage check. Each coverage check can retry a JSON-format failure once, so this path may take longer and cost more. If the evidence still does not support a course, use a clickable narrower-topic suggestion or switch to pasted/uploaded material; StudyLoop does not fill gaps with invented teaching content.
 
-关键词搜索先查找 Wikipedia 正文或已配置的 Brave 网页摘要，再由模型核对是否覆盖所选主题与学习水平。覆盖不足时，模型可给出最多三个概念名称或同义检索词，自动补查一轮并再次核对；大纲阶段最多调用模型两次，可能增加等待时间和费用。仍不满足时，页面会明确提示，并提供可点击的细分主题及粘贴／上传入口，不会编造缺失的教学资料。
+关键词搜索先查找 Wikipedia 正文或已配置的 Brave 网页摘要，再由模型核对是否覆盖所选主题与学习水平。覆盖不足时，模型可给出最多三个概念名称或同义检索词，自动补查一轮并再次核对；每次核对的 JSON 格式失败还可重试一次，可能增加等待时间和费用。仍不满足时，页面会明确提示，并提供可点击的细分主题及粘贴／上传入口，不会编造缺失的教学资料。
 
 Wikipedia is not a textbook catalogue: school chapter names and combined curriculum topics can retrieve unrelated encyclopedia articles. Brave Search can broaden discovery, but short excerpts may still be inadequate. For a specific textbook edition, supply a chapter you are allowed to use. Pasted text and uploaded files are used directly and never trigger automatic external search; model processing still uses your configured provider.
 
@@ -45,6 +45,10 @@ Wikipedia 并非教材目录，教材章节名或组合知识点可能搜到无�
 Review the proposed course title, level, sources, and objectives. Select the objectives you want and choose 4, 6, or 8 questions. Generation includes a separate answer/evidence review, so it can take more than one model call. If material is insufficient or the bank fails review, refine the topic or add a fuller explanation before trying again.
 
 先检查课程大纲和来源，勾选需要练习的知识点，再生成 4、6 或 8 道题。周计划只说明“学什么”时，通常需要补充真正的知识讲解。材料不足或题库复核不通过时，缩小主题、增加来源内容后再试。
+
+The first authoring response can restart once in two-question batches if its JSON is malformed, truncated or structurally invalid. Every batch and the combined bank must pass validation, then both independent reviews. For the supported official MiniMax-M3 review configuration, a first format error, timeout or truncation retries only that review with thinking disabled; it reuses the authored bank within the current request and keeps the two-attempt limit. If a batch, evidence check or review still fails, keep the displayed error category, phase and request ID when available. Your confirmed outline remains useful for another attempt; a failed bank is not saved as a finished course. See [troubleshooting](troubleshooting.md) for recovery limits, model errors and retrying a request whose response was lost.
+
+首次出题格式错误、截断或结构不合格时，可按每批两题重做一轮；各批及合并题库都需校验，再通过两类独立复核。符合条件的官方 MiniMax-M3 复核首次格式错误、超时或截断时，可关闭思考后仅重试该复核，当前请求内保留已生成题库，各阶段仍最多两次。批次、资料检查或复核仍失败时，请保留页面上的错误类别、阶段和请求编号。可以使用已确认的大纲再试；失败题库不会作为完成课程保存。[故障排查](troubleshooting.md)说明恢复边界、模型错误及响应丢失后的重试方式。
 
 ### Mainland China textbooks / 国内教材
 

@@ -14,6 +14,9 @@ const MESSAGES = {
       '题库未通过独立答案复核，可能存在答案争议、题意歧义或资料支持不足。本次题库未保存。请重试，或换用更清晰、完整的课程资料。',
     model_format:
       '模型未返回有效的 JSON 格式，无法继续生成。请重试；若仍失败，可减少题目数量或更换模型。',
+    model_refused: '模型服务商拒绝了这次生成。请调整课程主题或资料后再试；系统不会自动重复该请求。',
+    model_context_limit:
+      '请求超出模型支持的上下文长度。请缩短课程资料，或选择支持更长上下文的模型后重试。',
     model_truncated:
       '模型输出在完成前被截断。请在「模型与设置」的高级模型参数中提高最大输出 Token 上限（不要超过模型支持的限制），或减少题目数量、缩短资料后重试。',
     teaching_review_rejected:
@@ -66,6 +69,10 @@ const MESSAGES = {
       'The question bank did not pass independent answer review, possibly because of disputed answers, ambiguous wording or insufficient evidence. It was not saved. Retry or use clearer, more complete course material.',
     model_format:
       'The model did not return valid JSON, so generation could not continue. Retry, reduce the number of questions or use a different model.',
+    model_refused:
+      'The model provider declined this generation. Adjust the course topic or material before trying again. This request is not retried automatically.',
+    model_context_limit:
+      'The request exceeds the model’s context limit. Use shorter course material or a model with a larger context window, then retry.',
     model_truncated:
       'The model output was cut off before completion. Increase Maximum output tokens in the advanced model parameters in Models & settings, within the model’s supported limit, or use fewer questions or shorter material and retry.',
     teaching_review_rejected:
@@ -161,6 +168,27 @@ export function normalizeSourceSearch(value) {
   };
 }
 
+export function normalizeGenerationDiagnostic(value) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    typeof value.requestId !== 'string' ||
+    !/^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(
+      value.requestId,
+    ) ||
+    !['plan', 'course', 'classroom'].includes(value.operation) ||
+    !['outline', 'questions', 'answer_review', 'teaching_review', 'search'].includes(value.phase) ||
+    ![1, 2].includes(value.attempts)
+  )
+    return undefined;
+  return {
+    requestId: value.requestId,
+    operation: value.operation,
+    phase: value.phase,
+    attempts: value.attempts,
+  };
+}
+
 export function createApiError(result, status) {
   const code = typeof result?.code === 'string' ? result.code : result?.error?.code;
   const providerError = typeof code === 'string' && code.toLowerCase().startsWith('provider_');
@@ -175,6 +203,8 @@ export function createApiError(result, status) {
   );
   error.code = typeof code === 'string' ? code.toLowerCase() : undefined;
   error.status = status;
+  const generation = normalizeGenerationDiagnostic(result?.generation);
+  if (generation) error.generation = generation;
   if (isSourceCoverageError(error)) {
     const sourceSearch = normalizeSourceSearch(result?.sourceSearch);
     if (sourceSearch) error.sourceSearch = sourceSearch;

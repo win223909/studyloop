@@ -4,7 +4,7 @@
 
 **Turn a topic into a course. Turn practice into understanding.**
 
-[简体中文](README.zh-CN.md) · [Get started](#quick-start) · [Model configuration](docs/configuration.md) · [45 provider presets](docs/model-providers.md) · [OpenMAIC integration](docs/openmaic.md) · [Roadmap](docs/roadmap.md)
+[简体中文](README.zh-CN.md) · [Get started](#quick-start) · [Model configuration](docs/configuration.md) · [45 provider presets](docs/model-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [OpenMAIC integration](docs/openmaic.md) · [Roadmap](docs/roadmap.md)
 
 StudyLoop is a self-hosted learning app for students. Start with a subject, a few keywords, or your own course material; review the learning scope; practise with source-linked questions; revisit mistakes; and work through a short follow-up exercise. The course structure is subject-neutral, with a first focus on school-age learners.
 
@@ -84,6 +84,8 @@ flowchart LR
 ```
 
 Generated banks pass structural validation and a separate model review of answers and evidence. This reduces errors; it does not certify that every question is correct. Review source material and report questionable questions. Course exports include answer keys by design: StudyLoop is a learning tool, not a secure examination system.
+
+Generation has bounded recovery: it can remove unambiguous wrappers, retry a formatting failure, or restart the first malformed, truncated, or structurally invalid authoring response in small batches. Scoped official MiniMax-M3 review recovery can retry a first timeout or truncation without repeating authoring, within the existing two-attempt review limit. It never guesses missing JSON or saves a partially validated bank; failed recovery batches or rejected reviews stop the request. Errors include safe stage and request identifiers where available; supported write APIs accept `Idempotency-Key` for replaying a saved result after a lost response. See [recovery, request replay, and test evidence](docs/troubleshooting.md).
 
 The operator can submit a key through the local management form; the server stores it privately and never returns saved keys to the browser. Generated courses and attempts belong to an anonymous browser session. An optional instance password protects access to a shared deployment, while session cookies separate learning records. Clearing cookies loses access to that session; this alpha does not offer account recovery. Classic classroom documents are stored separately in browser IndexedDB; export them for backup. Read [security and privacy](SECURITY.md) before sharing an instance.
 

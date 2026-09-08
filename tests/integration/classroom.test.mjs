@@ -53,11 +53,12 @@ test(
   async (t) => {
     const directory = await mkdtemp(path.join(tmpdir(), 'studyloop-native-classroom-'));
     const calls = [];
+    let forcedActionReply;
     const provider = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw);
-      const content = JSON.stringify(replies[calls.length] || []);
+      const content = JSON.stringify(forcedActionReply ?? replies[calls.length] ?? []);
       calls.push({ path: req.url, body });
       if (body.stream) {
         res.setHeader('content-type', 'text/event-stream');
@@ -203,6 +204,37 @@ test(
       assert.equal(call.path, '/v1/chat/completions');
       assert.equal(call.body.model, 'studyloop-fixture');
       assert.ok((call.body.max_tokens ?? call.body.max_completion_tokens) <= 4096);
+    }
+    for (const invalid of [
+      { type: 'action', name: 'text', params: {} },
+      {
+        type: 'action',
+        name: 'unknown_action',
+        params: { content: 'Do not silently discard me.' },
+      },
+      { type: 'action', name: 'spotlight', params: {} },
+      { type: 'action', name: 'spotlight', params: { elementId: 'not-a-quiz-element' } },
+    ]) {
+      forcedActionReply = [...replies[2], invalid];
+      const before = calls.length;
+      const rejected = await request(
+        '/api/generate/scene-actions',
+        { ...common, content: content.content },
+        forged,
+      );
+      assert.equal(rejected.status, 422);
+      const failure = await rejected.json();
+      assert.equal(failure.errorCode, 'GENERATION_FAILED');
+      assert.equal(
+        failure.scene,
+        undefined,
+        'An invalid mixed list must never reach the browser store.',
+      );
+      assert.equal(
+        calls.length - before,
+        2,
+        'Only actions retry once; content is not regenerated.',
+      );
     }
     assert.equal((await request('/api/persistence/classrooms')).status, 404);
     assert.equal((await request('/api/generate/tts', {})).status, 404);

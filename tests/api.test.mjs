@@ -58,7 +58,12 @@ test('safe provider classification reaches the client without upstream response 
     mode: 'search',
   });
   assert.equal(result.status, 502);
-  assert.deepEqual(result.json, { code: 'provider_model', error: failure.publicMessage });
+  assert.equal(result.json.code, 'provider_model');
+  assert.equal(result.json.error, failure.publicMessage);
+  assert.deepEqual(Object.keys(result.json).sort(), ['code', 'error', 'generation']);
+  assert.equal(result.json.generation.operation, 'plan');
+  assert.equal(result.json.generation.phase, 'outline');
+  assert.match(result.json.generation.requestId, /^[a-f0-9-]{36}$/);
   assert.ok(!JSON.stringify(result.json).includes('upstream-private-response'));
 });
 

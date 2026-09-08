@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
+import { STUDYLOOP_EMBEDDED } from '@/lib/studyloop/embedded';
 import {
   assertClassroomWritable,
   isClassroomDeleted,
@@ -50,6 +51,26 @@ import {
 } from '@openmaic/generation';
 
 const log = createLogger('SceneGenerator');
+const STORAGE_FAILURE = 'The classroom could not be saved. Check browser storage and retry.';
+
+async function persistGeneratedClassroom(stageId: string, epoch: number): Promise<boolean> {
+  if (!STUDYLOOP_EMBEDDED) return true;
+  const current = useStageStore.getState();
+  if (
+    current.stage?.id !== stageId ||
+    current.generationEpoch !== epoch ||
+    isClassroomDeleted(stageId)
+  )
+    return false;
+  const saved = await current.saveToStorage();
+  const latest = useStageStore.getState();
+  return (
+    !!saved &&
+    latest.stage?.id === stageId &&
+    latest.generationEpoch === epoch &&
+    !isClassroomDeleted(stageId)
+  );
+}
 
 interface SceneContentResult {
   success: boolean;
@@ -666,6 +687,17 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         .sort((a, b) => a.order - b.order);
 
       if (pending.length === 0) {
+        if (!(await persistGeneratedClassroom(stage.id, startEpoch))) {
+          if (
+            store.getState().stage?.id === stage.id &&
+            store.getState().generationEpoch === startEpoch
+          ) {
+            store.getState().setGenerationStatus('paused');
+            toast.error(STORAGE_FAILURE);
+          }
+          generatingRef.current = false;
+          return;
+        }
         store.getState().setGenerationStatus('completed');
         store.getState().setGeneratingOutlines([]);
         store.getState().setGenerationComplete(true);
@@ -862,8 +894,26 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               break;
             }
 
-            removeGeneratingOutline(outline.id);
+            const previousSceneId = store.getState().currentSceneId;
             useStageStore.getState().addScene(scene);
+            if (!(await persistGeneratedClassroom(stage.id, startEpoch))) {
+              if (
+                store.getState().stage?.id === stage.id &&
+                store.getState().generationEpoch === startEpoch
+              ) {
+                store
+                  .getState()
+                  .setScenes(store.getState().scenes.filter((item) => item.id !== scene.id));
+                store.getState().setCurrentSceneId(previousSceneId);
+                store.getState().addFailedOutline(outline);
+                store.getState().setGenerationStatus('paused');
+                options.onSceneFailed?.(outline, STORAGE_FAILURE);
+                toast.error(STORAGE_FAILURE);
+              }
+              pausedByFailureOrAbort = true;
+              break;
+            }
+            removeGeneratingOutline(outline.id);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
           } else {
@@ -884,11 +934,17 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             // Parallel content phase left some outlines failed but kept going;
             // surface them for retry instead of signalling a clean completion.
             store.getState().setGenerationStatus('paused');
-          } else {
+          } else if (await persistGeneratedClassroom(stage.id, startEpoch)) {
             store.getState().setGenerationStatus('completed');
             store.getState().setGeneratingOutlines([]);
             store.getState().setGenerationComplete(true);
             options.onComplete?.();
+          } else if (
+            store.getState().stage?.id === stage.id &&
+            store.getState().generationEpoch === startEpoch
+          ) {
+            store.getState().setGenerationStatus('paused');
+            toast.error(STORAGE_FAILURE);
           }
         }
       } catch (err: unknown) {
@@ -1051,8 +1107,26 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           return;
         }
 
-        removeGeneratingOutline();
+        const previousSceneId = store.getState().currentSceneId;
         useStageStore.getState().addScene(actionsResult.scene);
+        if (!(await persistGeneratedClassroom(state.stage.id, retryEpoch))) {
+          if (
+            store.getState().stage?.id === state.stage.id &&
+            store.getState().generationEpoch === retryEpoch
+          ) {
+            store
+              .getState()
+              .setScenes(
+                store.getState().scenes.filter((scene) => scene.id !== actionsResult.scene!.id),
+              );
+            store.getState().setCurrentSceneId(previousSceneId);
+            store.getState().addFailedOutline(outline);
+            store.getState().setGenerationStatus('paused');
+            toast.error(STORAGE_FAILURE);
+          }
+          return;
+        }
+        removeGeneratingOutline();
 
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {

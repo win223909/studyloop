@@ -10,6 +10,8 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { Store, StoreDeleteError } from './store.js';
 import { createSettingsManager } from './settings.js';
 import { HttpError } from './errors.js';
+import { createGenerationDiagnostics, publicGenerationDetails } from './generation-diagnostics.js';
+import { createRequestReplayGuard } from './request-replay.js';
 import { extractUpload } from './uploads.js';
 import { loadSamples } from './core/samples.js';
 import { validateCourse, publicCourse, gradeAttempt, gradePractice } from './core/schema.js';
@@ -76,6 +78,45 @@ export async function createApp(options = {}) {
   const samples = await loadSamples();
   const providerOptions = { ...(options.providerOptions || {}), env };
   const core = { createPlan, generateCourse, providerConfig, ...(options.core || {}) };
+  const replay = createRequestReplayGuard({
+    findSaved: async ({ owner, operation, key }) =>
+      store.transaction(async () => {
+        const kind = operation.split(':')[0];
+        const collection = {
+          plan: 'plans',
+          course: 'courses',
+          attempt: 'attempts',
+          practice: 'practice',
+        }[kind];
+        if (!collection) return undefined;
+        const record = (await store.list(collection)).find(
+          (item) =>
+            item.owner === owner &&
+            item.request?.operation === operation &&
+            item.request.key === key,
+        );
+        if (!record) return undefined;
+        const result =
+          kind === 'plan'
+            ? { plan: record.plan }
+            : kind === 'course'
+              ? { course: publicCourse(record.course) }
+              : kind === 'attempt'
+                ? { attempt: record.attempt }
+                : record.result;
+        return { fingerprint: record.request.fingerprint, result };
+      }),
+  });
+  const replayRequest = (req, operation, payload, work) =>
+    replay.run(
+      {
+        owner: req.session.id,
+        operation,
+        key: req.get('Idempotency-Key'),
+        payload,
+      },
+      ({ key, fingerprint }) => work(key ? { request: { operation, key, fingerprint } } : {}),
+    );
   const openmaicRuntime =
     options.openmaicRuntime ||
     (options.env
@@ -552,13 +593,18 @@ export async function createApp(options = {}) {
 
   let activeGenerations = 0;
   let updatingSettings = false;
-  async function withGeneration(operation) {
+  async function withGeneration(operation, kind = 'course') {
     if (updatingSettings)
       throw new HttpError(
         409,
         'Settings are being updated. Try again shortly. 配置正在更新，请稍后重试。',
       );
-    const requestOptions = { ...providerOptions, env: { ...env } };
+    const diagnostics = createGenerationDiagnostics(kind, options.onDiagnostic);
+    const requestOptions = {
+      ...providerOptions,
+      env: { ...env },
+      onDiagnostic: diagnostics.record,
+    };
     if (!core.providerConfig(requestOptions).generationAvailable)
       throw new HttpError(
         503,
@@ -579,6 +625,18 @@ export async function createApp(options = {}) {
         await store.put('usage', day, { count: usage.count + 1 });
       });
       return await operation(requestOptions);
+    } catch (failure) {
+      if (failure instanceof CoreError) {
+        const state = diagnostics.details();
+        diagnostics.record({
+          phase: failure.phase || state.phase,
+          event: 'failed',
+          attempt: failure.attempts || state.attempts,
+          code: failure.code,
+        });
+        failure.generation = diagnostics.details();
+      }
+      throw failure;
     } finally {
       activeGenerations--;
     }
@@ -636,15 +694,26 @@ export async function createApp(options = {}) {
       if (text.length < 400 || text.length > 36000)
         throw new HttpError(400, 'Paste between 400 and 36,000 characters of course material.');
     }
-    const plan = await withGeneration((requestOptions) =>
-      core.createPlan(
-        { topic: topic.trim(), level: level.trim(), language, mode, text, ...sourceDetails },
-        requestOptions,
-      ),
-    );
-    plan.id = randomUUID();
-    await store.transaction(() => store.put('plans', plan.id, { owner: req.session.id, plan }));
-    res.status(201).json({ plan });
+    const input = {
+      topic: topic.trim(),
+      level: level.trim(),
+      language,
+      mode,
+      text,
+      ...sourceDetails,
+    };
+    const result = await replayRequest(req, 'plan', input, async (requestMetadata) => {
+      const plan = await withGeneration(
+        (requestOptions) => core.createPlan(input, requestOptions),
+        'plan',
+      );
+      plan.id = randomUUID();
+      await store.transaction(() =>
+        store.put('plans', plan.id, { owner: req.session.id, plan, ...requestMetadata }),
+      );
+      return { plan };
+    });
+    res.status(201).json(result);
   });
   app.post('/api/courses', async (req, res) => {
     const { planId, objectives, questionCount } = req.body || {};
@@ -657,59 +726,81 @@ export async function createApp(options = {}) {
     )
       throw new HttpError(400, 'Choose objectives from the proposed outline.');
     if (![4, 6, 8].includes(questionCount)) throw new HttpError(400, 'Choose 4, 6 or 8 questions.');
-    const result = await withGeneration((requestOptions) =>
-      core.generateCourse(plan, { objectives, questionCount }, requestOptions),
-    );
-    const course = validateCourse({
-      ...result,
-      id: randomUUID(),
-      origin: 'generated',
-      createdAt: new Date().toISOString(),
-    });
-    await store.transaction(async () => {
-      const original = await store.get('plans', planId);
-      if (!original || original.owner !== req.session.id)
-        throw new HttpError(
-          409,
-          'The course plan was deleted during generation. Create a new plan. 生成期间课程计划已删除，请重新创建课程计划。',
+    const saved = await replayRequest(
+      req,
+      'course',
+      { planId, objectives, questionCount },
+      async (requestMetadata) => {
+        const result = await withGeneration((requestOptions) =>
+          core.generateCourse(plan, { objectives, questionCount }, requestOptions),
         );
-      await store.put('courses', course.id, { owner: req.session.id, planId, course });
-    });
-    res.status(201).json({ course: publicCourse(course) });
+        const course = validateCourse({
+          ...result,
+          id: randomUUID(),
+          origin: 'generated',
+          createdAt: new Date().toISOString(),
+        });
+        await store.transaction(async () => {
+          const original = await store.get('plans', planId);
+          if (!original || original.owner !== req.session.id)
+            throw new HttpError(
+              409,
+              'The course plan was deleted during generation. Create a new plan. 生成期间课程计划已删除，请重新创建课程计划。',
+            );
+          await store.put('courses', course.id, {
+            owner: req.session.id,
+            planId,
+            course,
+            ...requestMetadata,
+          });
+        });
+        return { course: publicCourse(course) };
+      },
+    );
+    res.status(201).json(saved);
   });
 
   app.post('/api/courses/:id/attempts', async (req, res) => {
-    const attempt = await store.transaction(async () => {
-      const course = await getCourse(req.params.id, req);
-      const answers = req.body?.answers;
-      let graded;
-      try {
-        graded = gradeAttempt(course, answers);
-      } catch {
-        throw new HttpError(
-          400,
-          'Answer every question or select “I don’t know”. 请完成每题或选择“我不会”。',
-        );
-      }
-      const value = {
-        id: randomUUID(),
-        courseId: course.id,
-        courseTitle: course.title,
-        createdAt: new Date().toISOString(),
-        answers,
-        ...graded,
-      };
-      const saved = await store.get('courses', course.id);
-      // Preserve replay keys and the trusted server-side plan association.
-      await store.put('attempts', value.id, {
-        owner: req.session.id,
-        attempt: value,
-        course,
-        ...(saved?.owner === req.session.id && saved.planId ? { planId: saved.planId } : {}),
-      });
-      return value;
-    });
-    res.status(201).json({ attempt });
+    const result = await replayRequest(
+      req,
+      `attempt:${req.params.id}`,
+      { answers: req.body?.answers },
+      async (requestMetadata) => {
+        const attempt = await store.transaction(async () => {
+          const course = await getCourse(req.params.id, req);
+          const answers = req.body?.answers;
+          let graded;
+          try {
+            graded = gradeAttempt(course, answers);
+          } catch {
+            throw new HttpError(
+              400,
+              'Answer every question or select “I don’t know”. 请完成每题或选择“我不会”。',
+            );
+          }
+          const value = {
+            id: randomUUID(),
+            courseId: course.id,
+            courseTitle: course.title,
+            createdAt: new Date().toISOString(),
+            answers,
+            ...graded,
+          };
+          const saved = await store.get('courses', course.id);
+          // Preserve replay keys and the trusted server-side plan association.
+          await store.put('attempts', value.id, {
+            owner: req.session.id,
+            attempt: value,
+            course,
+            ...requestMetadata,
+            ...(saved?.owner === req.session.id && saved.planId ? { planId: saved.planId } : {}),
+          });
+          return value;
+        });
+        return { attempt };
+      },
+    );
+    res.status(201).json(result);
   });
   app.get('/api/attempts', async (req, res) => {
     const attempts = await store.transaction(async () =>
@@ -785,28 +876,36 @@ export async function createApp(options = {}) {
     res.json(result);
   });
   app.post('/api/attempts/:id/practice/:questionId', async (req, res) => {
-    const result = await store.transaction(async () => {
-      const { course } = await owned('attempts', req.params.id, req);
-      const question = course.questions.find((item) => item.id === req.params.questionId);
-      if (!question) throw new HttpError(404, 'Question not found.');
-      let graded;
-      try {
-        graded = gradePractice(question, req.body?.answer);
-      } catch {
-        throw new HttpError(400, 'Choose an answer or “I don’t know”.');
-      }
-      const id = randomUUID();
-      await store.put('practice', id, {
-        id,
-        owner: req.session.id,
-        attemptId: req.params.id,
-        questionId: question.id,
-        answer: req.body.answer,
-        ...graded,
-        createdAt: new Date().toISOString(),
-      });
-      return graded;
-    });
+    const result = await replayRequest(
+      req,
+      `practice:${req.params.id}:${req.params.questionId}`,
+      { answer: req.body?.answer },
+      (requestMetadata) =>
+        store.transaction(async () => {
+          const { course } = await owned('attempts', req.params.id, req);
+          const question = course.questions.find((item) => item.id === req.params.questionId);
+          if (!question) throw new HttpError(404, 'Question not found.');
+          let graded;
+          try {
+            graded = gradePractice(question, req.body?.answer);
+          } catch {
+            throw new HttpError(400, 'Choose an answer or “I don’t know”.');
+          }
+          const id = randomUUID();
+          await store.put('practice', id, {
+            id,
+            owner: req.session.id,
+            attemptId: req.params.id,
+            questionId: question.id,
+            answer: req.body.answer,
+            ...graded,
+            ...requestMetadata,
+            ...(requestMetadata.request ? { result: graded } : {}),
+            createdAt: new Date().toISOString(),
+          });
+          return graded;
+        }),
+    );
     res.json(result);
   });
   app.get('/api/attempts/:id/openmaic', async (req, res) => {
@@ -876,7 +975,7 @@ export async function createApp(options = {}) {
     if (!req.authenticated)
       throw new HttpError(401, 'Enter this instance’s access password. 请输入访问口令。');
     if (!route.allowed) throw new HttpError(404, 'Classroom endpoint is not available.');
-    if (route.generation) await withGeneration(() => proxyClassroom(req, res));
+    if (route.generation) await withGeneration(() => proxyClassroom(req, res), 'classroom');
     else await proxyClassroom(req, res);
   });
 
@@ -903,6 +1002,9 @@ export async function createApp(options = {}) {
         .json({
           error: error.publicMessage,
           code: error.code,
+          ...(publicGenerationDetails(error.generation)
+            ? { generation: publicGenerationDetails(error.generation) }
+            : {}),
           ...(['sources_missing', 'sources_insufficient'].includes(error.code) &&
           error.sourceSearch &&
           typeof error.sourceSearch.topic === 'string' &&

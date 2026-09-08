@@ -984,6 +984,15 @@ function GenerationPreviewContent() {
       const store = useStageStore.getState();
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       store.setStage(stage);
+      const generationEpoch = useStageStore.getState().generationEpoch;
+      const isCurrentGeneration = () => {
+        const current = useStageStore.getState();
+        return (
+          !signal.aborted &&
+          current.stage?.id === stage.id &&
+          current.generationEpoch === generationEpoch
+        );
+      };
       store.setOutlines(outlines);
 
       // Advance to slide-content step
@@ -1071,6 +1080,7 @@ function GenerationPreviewContent() {
       }
 
       // Add scene to store and navigate
+      if (STUDYLOOP_EMBEDDED && !isCurrentGeneration()) return;
       store.addScene(firstScene);
       store.setCurrentSceneId(firstScene.id);
 
@@ -1090,8 +1100,16 @@ function GenerationPreviewContent() {
         }),
       );
 
+      const saved = await store.saveToStorage();
+      // A departed generation must not navigate back or clear a newer session.
+      if (STUDYLOOP_EMBEDDED && !isCurrentGeneration()) return;
+      if (STUDYLOOP_EMBEDDED && !saved)
+        throw new Error(
+          locale === 'zh-CN'
+            ? '课堂未能保存到此浏览器。请检查浏览器存储后重试。'
+            : 'The classroom could not be saved in this browser. Check browser storage and retry.',
+        );
       sessionStorage.removeItem('generationSession');
-      await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       setIsOutlineStreaming(false);

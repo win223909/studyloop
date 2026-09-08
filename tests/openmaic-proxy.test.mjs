@@ -111,6 +111,8 @@ test('classroom cleanup exposes only its exact GET page and remains outside gene
 
 test('blocks shared persistence, jobs, voice registration and route-normalization escapes', () => {
   for (const url of [
+    '/api/access-code/status',
+    '/api/access-code/verify',
     '/api/persistence/stages',
     '/api/agent/sessions',
     '/api/generate-classroom/job',
@@ -291,6 +293,108 @@ test('sanitizes upstream HTTP errors and permits only internal allowlisted redir
   assert.equal(response.headers.get('location'), mode);
 });
 
+test('HTTP API failures retain only recognized error codes and locally defined messages', async (t) => {
+  let errorCode;
+  const current = await fixture(t, (_req, res) => {
+    res.writeHead(500, {
+      'content-type': 'application/json; charset=utf-8',
+      'set-cookie': 'private=synthetic-cookie',
+      'x-provider-details': 'synthetic-private-details',
+    });
+    const body = JSON.stringify({
+      success: false,
+      errorCode,
+      error: `synthetic-provider-secret ${TOKEN}`,
+      details: 'synthetic-private-prompt',
+      metadata: { apiKey: 'synthetic-private-key', output: 'synthetic-private-output' },
+    });
+    res.write(body.slice(0, 20));
+    setImmediate(() => res.end(body.slice(20)));
+  });
+  for (const code of [
+    'GENERATION_FAILED',
+    'INTERNAL_ERROR',
+    'UPSTREAM_ERROR',
+    'RATE_LIMITED',
+    'PARSE_FAILED',
+    'MISSING_API_KEY',
+    'MISSING_MODEL',
+    'INVALID_CREDENTIALS',
+  ]) {
+    errorCode = code;
+    const response = await fetch(current.url + '/api/generate/scene-content', { method: 'POST' });
+    assert.equal(response.status, 500);
+    assert.equal(response.headers.get('set-cookie'), null);
+    assert.equal(response.headers.get('x-provider-details'), null);
+    const payload = await response.json();
+    assert.deepEqual(Object.keys(payload).sort(), ['error', 'errorCode']);
+    assert.equal(payload.errorCode, code);
+    assert.equal(typeof payload.error, 'string');
+    assert.ok(!JSON.stringify(payload).includes('synthetic-'));
+  }
+});
+
+test('unknown, malformed, oversized and non-JSON HTTP errors remain generic', async (t) => {
+  const generic = { error: 'The built-in classroom request failed. Please try again.' };
+  let body;
+  let contentType = 'application/json';
+  let encoding;
+  let declaredLength;
+  const current = await fixture(t, (_req, res) => {
+    res.statusCode = 502;
+    res.setHeader('content-type', contentType);
+    if (encoding) res.setHeader('content-encoding', encoding);
+    if (declaredLength) res.setHeader('content-length', declaredLength);
+    res.end(body);
+  });
+  for (const payload of [
+    { errorCode: 'UNRECOGNIZED_PRIVATE_CODE', error: TOKEN },
+    { errorCode: '__proto__', error: TOKEN },
+    { errorCode: 'toString', error: TOKEN },
+    { errorCode: 123, error: TOKEN },
+    [{ errorCode: 'PARSE_FAILED', error: TOKEN }],
+    { details: { errorCode: 'PARSE_FAILED', error: TOKEN } },
+  ]) {
+    body = JSON.stringify(payload);
+    const response = await fetch(current.url + '/api/chat', { method: 'POST' });
+    assert.deepEqual(await response.json(), generic);
+  }
+  body = '{"errorCode":"PARSE_FAILED","error":"unfinished';
+  assert.deepEqual(
+    await (await fetch(current.url + '/api/chat', { method: 'POST' })).json(),
+    generic,
+  );
+  body = JSON.stringify({
+    errorCode: 'PARSE_FAILED',
+    error: TOKEN,
+    details: 'x'.repeat(64 * 1024),
+  });
+  for (const length of [undefined, Buffer.byteLength(body)]) {
+    declaredLength = length;
+    assert.deepEqual(
+      await (await fetch(current.url + '/api/chat', { method: 'POST' })).json(),
+      generic,
+    );
+  }
+  declaredLength = undefined;
+  body = JSON.stringify({ errorCode: 'PARSE_FAILED', error: TOKEN });
+  contentType = 'text/html';
+  assert.deepEqual(
+    await (await fetch(current.url + '/api/chat', { method: 'POST' })).json(),
+    generic,
+  );
+  contentType = 'application/json';
+  encoding = 'gzip';
+  body = gzipSync(body);
+  assert.deepEqual(
+    await (await fetch(current.url + '/api/chat', { method: 'POST' })).json(),
+    generic,
+  );
+  encoding = undefined;
+  body = JSON.stringify({ errorCode: 'PARSE_FAILED', error: TOKEN });
+  assert.deepEqual(await (await fetch(current.url + '/studio')).json(), generic);
+});
+
 test('streams SSE promptly, sanitizes error events and holds completion until stream ends', async (t) => {
   let upstreamResponse;
   const current = await fixture(t, (_req, res) => {
@@ -314,6 +418,62 @@ test('streams SSE promptly, sanitizes error events and holds completion until st
   assert.match(rest, /"type":"error"/);
   assert.ok(!rest.includes('synthetic-provider-secret') && !rest.includes(TOKEN));
   assert.equal(current.finished(), 1);
+});
+
+test('SSE errors retain whitelisted categories while dropping all upstream metadata and event fields', async (t) => {
+  const frames = [
+    {
+      type: 'error',
+      errorCode: 'GENERATION_FAILED',
+      error: TOKEN,
+      metadata: { prompt: 'synthetic-private' },
+    },
+    {
+      type: 'error',
+      data: { errorCode: 'PARSE_FAILED', message: TOKEN, apiKey: 'synthetic-private' },
+    },
+    { success: false, errorCode: 'RATE_LIMITED', error: 'synthetic-private' },
+    { errorCode: 'PRIVATE_CODE', error: TOKEN },
+  ];
+  const current = await fixture(t, (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('data: {"type":"delta","text":"safe progress"}\n\n');
+    for (const frame of frames) {
+      const data = `event: error\nid: synthetic-private\nretry: 1\ndata: ${JSON.stringify(frame)}\n\n`;
+      res.write(data.slice(0, 17));
+      res.write(data.slice(17));
+    }
+    res.end('event: error\ndata: not-json-synthetic-private\n\n');
+  });
+  const response = await fetch(current.url + '/api/chat', { method: 'POST' });
+  const text = await response.text();
+  assert.match(text, /safe progress/);
+  assert.ok(!text.includes(TOKEN) && !text.includes('synthetic-private'));
+  assert.ok(!text.includes('id:') && !text.includes('retry:'));
+  const errors = text
+    .split('\n\n')
+    .slice(1)
+    .filter(Boolean)
+    .map((frame) =>
+      JSON.parse(
+        frame
+          .split('\n')
+          .find((line) => line.startsWith('data:'))
+          .slice(5),
+      ),
+    );
+  assert.deepEqual(
+    errors.map((error) => error.errorCode),
+    ['GENERATION_FAILED', 'PARSE_FAILED', 'RATE_LIMITED', undefined, undefined],
+  );
+  for (const error of errors) {
+    assert.equal(error.type, 'error');
+    assert.deepEqual(error.data, { message: error.error });
+    assert.deepEqual(
+      Object.keys(error).sort(),
+      error.errorCode ? ['data', 'error', 'errorCode', 'type'] : ['data', 'error', 'type'],
+    );
+  }
 });
 
 test('redacts runtime token across response chunks, including compressed successful responses', async (t) => {
