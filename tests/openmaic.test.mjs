@@ -75,12 +75,13 @@ test('brief focuses on wrong/unknown answers, preserves snapshot, and credits Op
     baseUrl: 'https://classroom.example.org/',
   });
   assert.equal(filename, 'studyloop-openmaic-lesson.md');
-  assert.equal(url, 'https://classroom.example.org/');
+  assert.equal(url, undefined);
   assert.match(markdown, /Original fraction course/);
   assert.match(markdown, /9\/12 is greater than 8\/12/);
   assert.match(markdown, /I don't know yet/);
   assert.match(markdown, /THU-MAIC/);
   assert.match(markdown, /https:\/\/github.com\/THU-MAIC\/OpenMAIC/);
+  assert.match(markdown, /bundled OpenMAIC application/);
   assert.doesNotMatch(markdown, /Already mastered|Unrelated source|Changed course title|PRIVATE_/);
 });
 
@@ -102,7 +103,7 @@ test('Chinese course exports Chinese instructions and unknown answer wording', (
   assert.match(markdown, /当前不会自动回传课堂进度/);
 });
 
-test('no remote request or invented deep link; credential-bearing URLs are excluded', () => {
+test('brief export never returns an external classroom address, including legacy configuration', () => {
   const { course, attempt } = fixture();
   for (const baseUrl of [
     undefined,
@@ -111,13 +112,11 @@ test('no remote request or invented deep link; credential-bearing URLs are exclu
     'https://user:secret@example.org',
     'https://example.org/?token=private',
     'https://example.org/#secret',
+    'http://localhost:3000',
+    'https://classroom.example.org/',
   ]) {
     assert.equal(buildOpenMAICBrief(course, attempt, { baseUrl }).url, undefined);
   }
-  assert.equal(
-    buildOpenMAICBrief(course, attempt, { baseUrl: 'http://localhost:3000' }).url,
-    'http://localhost:3000/',
-  );
 });
 
 test('malicious material fences cannot close the exported JSON data boundary', () => {

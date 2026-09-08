@@ -73,6 +73,40 @@ export function providerConfig(options = {}) {
   return { generationAvailable: config(options).available, searchAvailable: true };
 }
 
+// Send only a synthetic probe. A saved configuration is not evidence of connectivity.
+export async function testProvider(options = {}) {
+  const cfg = config(options);
+  if (!cfg.available)
+    throw error(
+      'generation_unconfigured',
+      'Enter a model ID and API key, or enable keyless mode for a local model. 请填写模型与密钥，或为本地模型启用免密模式。',
+    );
+  const probeOptions = {
+    ...options,
+    env: { ...(options.env ?? process.env), LLM_TIMEOUT_MS: String(Math.min(cfg.timeout, 30000)) },
+  };
+  const models = [cfg.model];
+  const probe = async (review) => {
+    const result = await modelJson(
+      'Connection check only. Return the JSON object {"ok":true}. Do not include other fields.',
+      { purpose: 'studyloop-configuration-test' },
+      probeOptions,
+      review,
+    );
+    if (result.ok !== true)
+      throw error(
+        'model_format',
+        'The model replied but did not follow the required JSON format. 模型有响应，但没有返回要求的 JSON 格式。',
+      );
+  };
+  await probe(false);
+  if (cfg.reviewModel !== cfg.model) {
+    await probe(true);
+    models.push(cfg.reviewModel);
+  }
+  return { ok: true, models };
+}
+
 async function fetchJson(url, init, options, category = 'provider') {
   const fetcher = options.fetch ?? globalThis.fetch;
   const timeout = config(options).timeout;
@@ -286,24 +320,22 @@ export async function searchSources(topic, language = 'en', options = {}) {
       options,
       'search',
     );
-    sources = (response.web?.results || [])
-      .slice(0, 5)
-      .map((item, index) => ({
-        id: `source-${index + 1}`,
-        title: `${cleanExcerpt(item.title).slice(0, 230)} (search excerpts)`,
-        text: [
-          ...new Set(
-            [item.description, ...(Array.isArray(item.extra_snippets) ? item.extra_snippets : [])]
-              .map(cleanExcerpt)
-              .filter(Boolean),
-          ),
-        ]
-          .join('\n')
-          .slice(0, 10000),
-        url: item.url,
-        kind: 'web',
-        retrievedAt: now,
-      }));
+    sources = (response.web?.results || []).slice(0, 5).map((item, index) => ({
+      id: `source-${index + 1}`,
+      title: `${cleanExcerpt(item.title).slice(0, 230)} (search excerpts)`,
+      text: [
+        ...new Set(
+          [item.description, ...(Array.isArray(item.extra_snippets) ? item.extra_snippets : [])]
+            .map(cleanExcerpt)
+            .filter(Boolean),
+        ),
+      ]
+        .join('\n')
+        .slice(0, 10000),
+      url: item.url,
+      kind: 'web',
+      retrievedAt: now,
+    }));
   } else {
     const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
     const url = new URL(endpoint);

@@ -6,6 +6,7 @@ import {
   generateCourse,
   providerConfig,
   searchSources,
+  testProvider,
 } from '../server/core/providers.js';
 import { loadSamples } from '../server/core/samples.js';
 
@@ -333,4 +334,30 @@ test('Brave uses search excerpts only and does not fetch arbitrary result URLs',
   assert.match(sources[0].title, /search excerpts/);
   assert.equal(sources[0].title.includes('<b>'), false);
   assert.ok(sources[0].text.length > 400);
+});
+
+for (const protocol of ['openai-compatible', 'anthropic', 'gemini']) {
+  test(`configuration probe uses ${protocol} and validates both selected models`, async () => {
+    const calls = [];
+    const result = await testProvider({
+      env: { ...env, LLM_PROVIDER: protocol, LLM_REVIEW_MODEL: 'test-review' },
+      fetch: mockProvider([{ ok: true }, { ok: true }], protocol, calls),
+    });
+    assert.deepEqual(result, { ok: true, models: ['test-model', 'test-review'] });
+    assert.equal(calls.length, 2);
+    assert.equal(JSON.stringify(result).includes(env.LLM_API_KEY), false);
+  });
+}
+test('configuration probes reject unusable responses and redact authentication errors', async () => {
+  await assert.rejects(
+    testProvider({ env, fetch: mockProvider([{ ok: false }]) }),
+    (e) => e.code === 'model_format',
+  );
+  await assert.rejects(
+    testProvider({
+      env,
+      fetch: mockProvider([jsonResponse({ error: 'test-private-provider-body' }, 401)]),
+    }),
+    (e) => e.code === 'provider_auth' && !e.message.includes('test-private-provider-body'),
+  );
 });

@@ -10,14 +10,17 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "vite build",
+    "build": "npm run build:ui && npm run classroom:install",
     "start": "node --env-file-if-exists=.env server/index.js",
     "test": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test",
     "check": "npm test && npm run build && npm run scan:public",
     "scan:public": "node scripts/scan-public.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:ui": "vite build",
+    "classroom:install": "node scripts/build-openmaic.mjs",
+    "test:classroom": "node --test tests/integration/*.test.mjs"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

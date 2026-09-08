@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="#224d3d" />
-  <path
-    d="M16 25c0-7 11-9 16-2 5-7 16-5 16 2 0 9-16 19-16 19S16 34 16 25Z"
-    fill="none"
-    stroke="#f7f6f1"
-    stroke-width="4"
-    stroke-linejoin="round"
-  />
-  <path d="M23 31h18" stroke="#f7f6f1" stroke-width="3" stroke-linecap="round" />
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
+  <title id="title">StudyLoop</title>
+  <desc id="description">A white open book and learning loop on a cobalt blue tile.</desc>
+  <rect width="64" height="64" rx="16" fill="#315BFF"/>
+  <g transform="translate(6 6) scale(.8125)">
+    <path d="M52 17A25 25 0 1 1 37 7.5" fill="none" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="m36 2 10 8-12 4Z" fill="#FFFFFF"/>
+    <path d="m17 22 13 4v19l-13-4Zm17 4 13-4v19l-13 4Z" fill="#FFFFFF"/>
+  </g>
 </svg>

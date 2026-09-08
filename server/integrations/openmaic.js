@@ -6,14 +6,12 @@ function plain(value, maxLength = 6000) {
     : '';
 }
 
-function safeUrl(value, { deployment = false } = {}) {
+function safeUrl(value) {
   if (!value) return undefined;
   try {
     const url = new URL(value);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
       return undefined;
-    // A deployment link is public configuration; never turn URL tokens into a handoff.
-    if (deployment && (url.search || url.hash)) return undefined;
     return url.href;
   } catch {
     return undefined;
@@ -34,7 +32,7 @@ function jsonBlock(value) {
  * The caller enforces attempt ownership. Graded evidence comes from the attempt
  * snapshot so later changes to a course cannot rewrite a student's past work.
  */
-export function buildOpenMAICBrief(course, attempt, { baseUrl } = {}) {
+export function buildOpenMAICBrief(course, attempt) {
   if (!course || !attempt || course.id !== attempt.courseId || !Array.isArray(attempt.results)) {
     throw new Error('The lesson brief requires an attempt from this course.');
   }
@@ -92,8 +90,8 @@ export function buildOpenMAICBrief(course, attempt, { baseUrl } = {}) {
     }));
 
   const intro = zh
-    ? '# StudyLoop → OpenMAIC 学习简报\n\n请根据本简报创建一节约 5–10 分钟的互动微课。'
-    : '# StudyLoop → OpenMAIC lesson brief\n\nCreate an interactive micro-lesson of about 5–10 minutes from this brief.';
+    ? '# StudyLoop → OpenMAIC 学习简报\n\n请根据本简报创建一节由 4–6 个场景组成的互动微课，只使用讲解幻灯片、练习题或独立 HTML 互动演示。'
+    : '# StudyLoop → OpenMAIC lesson brief\n\nCreate an interactive micro-lesson of 4–6 scenes from this brief, using only slides, quizzes, or standalone HTML interactive demonstrations.';
   const instructions = zh
     ? [
         '先用一个生活情境解释概念，再分步骤演示一个例题。根据课程水平使用适龄语言。',
@@ -127,8 +125,8 @@ export function buildOpenMAICBrief(course, attempt, { baseUrl } = {}) {
       ? '\n本次练习全部答对。请设计迁移与巩固活动，不要虚构薄弱点。\n'
       : '\nAll answers in this attempt were correct. Focus on consolidation and transfer; do not invent knowledge gaps.\n';
   const credit = zh
-    ? `特别感谢 [OpenMAIC](${UPSTREAM_URL})、THU-MAIC 团队及所有贡献者，为开源 AI 互动教育提供的重要基础。StudyLoop 提供本学习简报；课堂由你独立运行的 OpenMAIC 生成。`
-    : `Special thanks to [OpenMAIC](${UPSTREAM_URL}), the THU-MAIC team, and all contributors for their foundation for open-source interactive AI education. StudyLoop supplies this lesson brief; your separately operated OpenMAIC instance generates the classroom.`;
+    ? `特别感谢 [OpenMAIC](${UPSTREAM_URL})、THU-MAIC 团队及所有贡献者，为开源 AI 互动教育提供的重要基础。StudyLoop 提供本学习简报；互动课堂由内置的 OpenMAIC 生成。`
+    : `Special thanks to [OpenMAIC](${UPSTREAM_URL}), the THU-MAIC team, and all contributors for their foundation for open-source interactive AI education. StudyLoop supplies this lesson brief; the bundled OpenMAIC application generates the interactive classroom.`;
 
   const markdown =
     [
@@ -144,8 +142,8 @@ export function buildOpenMAICBrief(course, attempt, { baseUrl } = {}) {
       zh ? '## 致谢与数据说明' : '## Acknowledgment and data note',
       credit,
       zh
-        ? '本文件包含题目、所选答案与解析，不包含学习者账户、浏览器会话标识或 API 配置。未包含完整上传资料；请按需补充你有权使用的来源材料。上传本文件会把这些学习内容交给你的 OpenMAIC 部署及其配置的服务商。'
-        : 'This file contains questions, selected answers, and explanations, without learner accounts, browser session identifiers, or API configuration. Full uploaded materials are omitted; attach source material you are entitled to use when needed. Uploading this file shares its learning content with your OpenMAIC deployment and its configured providers.',
+        ? '本文件包含题目、所选答案与解析，不包含学习者账户、浏览器会话标识或 API 配置。未包含完整上传资料；请按需补充你有权使用的来源材料。生成课堂时，内置 OpenMAIC 及配置的模型服务商会处理这些学习内容。'
+        : 'This file contains questions, selected answers, and explanations, without learner accounts, browser session identifiers, or API configuration. Full uploaded materials are omitted; attach source material you are entitled to use when needed. Generating a classroom sends this learning content to the bundled OpenMAIC application and the configured model providers.',
     ]
       .filter(Boolean)
       .join('\n\n') + '\n';
@@ -153,8 +151,5 @@ export function buildOpenMAICBrief(course, attempt, { baseUrl } = {}) {
   return {
     filename: 'studyloop-openmaic-lesson.md',
     markdown,
-    ...(safeUrl(baseUrl, { deployment: true })
-      ? { url: safeUrl(baseUrl, { deployment: true }) }
-      : {}),
   };
 }

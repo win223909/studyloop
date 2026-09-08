@@ -30,6 +30,8 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import Logo from './Brand.jsx';
+import ModelSettings from './ModelSettings.jsx';
 
 const REPO = 'https://github.com/win223909/studyloop';
 const COPY = {
@@ -132,13 +134,20 @@ const COPY = {
     retry: '重新练习',
     immutable: '已保存原始答卷，之后的巩固不会改动本次成绩。',
     sourcesForQuestion: '本题参考资料',
-    openmaic: '进入互动课堂',
-    openmaicSub: '把这次的薄弱点带到 OpenMAIC，继续学习。',
+    openmaic: '把薄弱点学明白',
+    openmaicSub: '使用当前模型，在内置 OpenMAIC 中生成针对本次练习的互动课堂。',
     downloadBrief: '下载课堂学习提纲',
-    openClassroom: '打开 OpenMAIC',
-    openmaicHint: '下载提纲后，在你的 OpenMAIC 课堂中作为资料导入。',
-    openmaicMissing: '尚未配置课堂地址；仍可下载提纲，在自己部署的 OpenMAIC 中使用。',
-    openmaicCredit: '互动课堂衔接基于 THU-MAIC / OpenMAIC。感谢原项目团队及所有贡献者。',
+    openClassroom: '生成互动课堂',
+    openingClassroom: '正在准备课堂…',
+    openmaicHint: '先确认最多 6 个场景的大纲，再生成课堂；每个场景通常调用模型两次，并计入每日生成额度。',
+    openmaicMissing: '内置课堂模块尚未安装。部署者安装模块后即可使用，教学提纲仍可下载。',
+    openmaicModelMissing: '先在“模型与设置”中配置模型，课堂会直接复用这组配置。',
+    openmaicInstalled: '已安装',
+    openmaicReady: '已就绪',
+    openmaicStarting: '正在启动',
+    openmaicFailed: '启动未完成',
+    openmaicInvalidLink: '课堂入口无效，请重试。',
+    openmaicCredit: '内置互动课堂使用 THU-MAIC / OpenMAIC。感谢原项目团队及所有贡献者。',
     records: '每一步，都算数。',
     recordsSub: '回到过去的练习，继续消化尚未熟悉的知识。',
     emptyHistory: '你的第一份答卷，还在前面。',
@@ -146,8 +155,8 @@ const COPY = {
     browse: '去选一门课程',
     replay: '回看答卷',
     sessionNote: '记录保存在当前浏览器会话中。更换浏览器或清除 Cookie 后，原记录将无法从这里访问。',
-    setup: '按你的方式，连接模型。',
-    setupSub: '模型与搜索服务由部署者配置，学生无需填写 API 密钥。',
+    setup: '连接你的模型与服务',
+    setupSub: '在部署电脑上设置模型、搜索和课堂服务，开始创建自己的课程。',
     generation: '课程生成',
     enabled: '已配置',
     notConfigured: '未配置',
@@ -176,7 +185,7 @@ const COPY = {
     aboutBText: '课程保留资料来源，练习保存原始答卷。看见过程，才能更好地理解结果。',
     aboutC: '感谢 OpenMAIC',
     aboutCText:
-      '本项目的互动课堂衔接基于 OpenMAIC 构建。特别感谢 THU-MAIC 团队及所有贡献者，为开源 AI 教育提供的重要基础。当前通过学习提纲文件衔接课堂；OpenMAIC 需独立部署。',
+      'StudyLoop 集成 OpenMAIC 的真实课堂生成与互动学习流程，并复用 StudyLoop 的模型配置。特别感谢 THU-MAIC 团队及所有贡献者；原项目的 MIT 许可和署名随内置模块保留。',
     upstream: '访问 OpenMAIC',
     license: '开源协议与第三方声明',
     version: '版本',
@@ -314,15 +323,24 @@ const COPY = {
     retry: 'Practice again',
     immutable: 'Your original answers are saved. Follow-up practice won’t change this result.',
     sourcesForQuestion: 'References for this question',
-    openmaic: 'Continue in an interactive classroom',
-    openmaicSub: 'Bring your next learning steps into OpenMAIC.',
+    openmaic: 'Understand what needs more practice',
+    openmaicSub: 'Generate a focused classroom in the built-in OpenMAIC using your current model.',
     downloadBrief: 'Download classroom brief',
-    openClassroom: 'Open OpenMAIC',
-    openmaicHint: 'Download the brief, then import it as material in your OpenMAIC classroom.',
+    openClassroom: 'Generate an interactive classroom',
+    openingClassroom: 'Preparing your classroom…',
+    openmaicHint:
+      'Review an outline of up to 6 scenes. Each scene normally makes two model requests, counted toward the daily generation limit.',
     openmaicMissing:
-      'No classroom URL is configured. You can still download the brief for your own OpenMAIC deployment.',
+      'The classroom module is not installed yet. The deployment owner can install it; you can still download the brief.',
+    openmaicModelMissing:
+      'Configure a model in Model & settings first. The classroom will reuse that configuration.',
+    openmaicInstalled: 'Installed',
+    openmaicReady: 'Ready',
+    openmaicStarting: 'Starting',
+    openmaicFailed: 'Startup incomplete',
+    openmaicInvalidLink: 'The classroom link is invalid. Please try again.',
     openmaicCredit:
-      'Classroom handoff builds on THU-MAIC / OpenMAIC. Thank you to its team and contributors.',
+      'The built-in classroom uses THU-MAIC / OpenMAIC. Thank you to its team and contributors.',
     records: 'Every step counts.',
     recordsSub: 'Return to earlier practice and keep building understanding.',
     emptyHistory: 'Your first practice is still ahead.',
@@ -332,8 +350,7 @@ const COPY = {
     sessionNote:
       'Records belong to this browser session. Switching browsers or clearing cookies means you can no longer access these records here.',
     setup: 'Connect the model you choose.',
-    setupSub:
-      'The instance owner configures model and search services. Students don’t need API keys.',
+    setupSub: 'Set up models, search and classroom services on the deployment computer.',
     generation: 'Course generation',
     enabled: 'Configured',
     notConfigured: 'Not configured',
@@ -368,7 +385,7 @@ const COPY = {
       'Courses retain their sources. Practice keeps an immutable record of your answers, so you can see and understand your progress.',
     aboutC: 'Thank you, OpenMAIC',
     aboutCText:
-      'Our interactive-classroom handoff builds on OpenMAIC. Special thanks to the THU-MAIC team and all contributors for their important foundation for open AI education. The current integration uses a learning brief file; OpenMAIC is deployed separately.',
+      'StudyLoop integrates the real OpenMAIC classroom generation and interactive learning workflow, using your StudyLoop model configuration. Special thanks to the THU-MAIC team and all contributors. The bundled module retains the original MIT license and attribution.',
     upstream: 'Explore OpenMAIC',
     license: 'License & third-party notices',
     version: 'Version',
@@ -448,19 +465,6 @@ function downloadText(name, text, type = 'text/markdown;charset=utf-8') {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Logo({ small = false }) {
-  return (
-    <span className={`brand ${small ? 'brand-small' : ''}`}>
-      <svg aria-hidden="true" viewBox="0 0 40 40">
-        <path d="M7 16c0-6 9-8 13-2 4-6 13-4 13 2 0 8-13 16-13 16S7 24 7 16Z" />
-        <path d="M13 20h14" />
-      </svg>
-      <span>
-        StudyLoop<span className="brand-period">.</span>
-      </span>
-    </span>
-  );
-}
 function CourseArt({ type = 0 }) {
   return (
     <svg className={`course-art art-${type}`} viewBox="0 0 96 88" aria-hidden="true">
@@ -508,7 +512,9 @@ export default function App() {
     localStorage.getItem('studyloop-language') === 'en' ? 'en' : 'zh',
   );
   const t = COPY[lang];
-  const [view, setView] = useState('home');
+  const [view, setView] = useState(() =>
+    new URLSearchParams(window.location.search).get('view') === 'settings' ? 'settings' : 'home',
+  );
   const [config, setConfig] = useState(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -535,7 +541,7 @@ export default function App() {
   const [practiceAnswers, setPracticeAnswers] = useState({});
   const [practiceResults, setPracticeResults] = useState({});
   const [source, setSource] = useState(null);
-  const [brief, setBrief] = useState(null);
+  const [openingClassroom, setOpeningClassroom] = useState(false);
   const [password, setPassword] = useState('');
   const [voices, setVoices] = useState([]);
   const [voiceURI, setVoiceURI] = useState('');
@@ -544,6 +550,7 @@ export default function App() {
   const importRef = useRef(null);
   const fileRef = useRef(null);
   const mainRef = useRef(null);
+  const restoredAttemptRef = useRef(false);
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   const work = async (fn) => {
@@ -583,6 +590,12 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
+    if (initializing || !authenticated || restoredAttemptRef.current) return;
+    restoredAttemptRef.current = true;
+    const id = new URLSearchParams(window.location.search).get('attempt');
+    if (id) showAttempt(id);
+  }, [initializing, authenticated]);
+  useEffect(() => {
     localStorage.setItem('studyloop-language', lang);
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.title = `StudyLoop · ${t.library}`;
@@ -610,12 +623,22 @@ export default function App() {
       document.body.style.overflow = oldOverflow;
     };
   }, [source]);
-  const navigate = (next) => {
+  const navigate = (next, resultId) => {
     if (speechSupported) window.speechSynthesis.cancel();
     setSpeaking(null);
+    if (next === 'classrooms') {
+      window.location.assign('/studio');
+      return;
+    }
     setView(next);
     setError('');
     setNotice('');
+    const url = new URL(window.location.href);
+    if (next === 'results' && resultId) url.searchParams.set('attempt', resultId);
+    else if (next !== 'results') url.searchParams.delete('attempt');
+    if (next === 'settings') url.searchParams.set('view', 'settings');
+    else url.searchParams.delete('view');
+    window.history.replaceState(null, '', url.pathname + url.search);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const sourceKind = (kind) =>
@@ -642,8 +665,7 @@ export default function App() {
       setOpenResults({});
       setPracticeAnswers({});
       setPracticeResults({});
-      setBrief(null);
-      navigate('results');
+      navigate('results', data.attempt.id);
     });
   const makePlan = (event) => {
     event.preventDefault();
@@ -691,9 +713,8 @@ export default function App() {
       setOpenResults({});
       setPracticeAnswers({});
       setPracticeResults({});
-      setBrief(null);
       await loadLibrary();
-      navigate('results');
+      navigate('results', data.attempt.id);
     });
   const importCourse = async (event) => {
     const selected = event.target.files?.[0];
@@ -721,8 +742,26 @@ export default function App() {
   const getBrief = () =>
     work(async () => {
       const data = await api(`/api/attempts/${encodeURIComponent(attempt.id)}/openmaic`);
-      setBrief(data);
       downloadText(data.filename || 'studyloop-classroom-brief.md', data.markdown);
+    });
+  const openClassroom = () =>
+    work(async () => {
+      setOpeningClassroom(true);
+      try {
+        const data = await api(
+          `/api/attempts/${encodeURIComponent(attempt.id)}/classroom-handoff`,
+          {
+            method: 'POST',
+          },
+        );
+        const url = new URL(data.url, window.location.origin);
+        if (url.origin !== window.location.origin || url.pathname !== '/studyloop-launch')
+          throw new Error(t.openmaicInvalidLink);
+        if (speechSupported) window.speechSynthesis.cancel();
+        window.location.assign(url.pathname + url.search);
+      } finally {
+        setOpeningClassroom(false);
+      }
     });
   const gradePractice = (id) =>
     work(async () => {
@@ -781,6 +820,9 @@ export default function App() {
   const navItems = [
     ['home', BookOpen, t.library],
     ['history', History, t.history],
+    ...(config?.openmaicAvailable
+      ? [['classrooms', GraduationCap, lang === 'zh' ? '互动课堂' : 'Classrooms']]
+      : []),
     ['settings', Settings2, t.settings],
     ['about', Info, t.about],
   ];
@@ -815,7 +857,7 @@ export default function App() {
           onClick={() => navigate('home')}
           aria-label="StudyLoop home"
         >
-          <Logo />
+          <Logo inverse />
         </button>
         <p className="brand-caption">{t.tagline}</p>
         <button
@@ -828,11 +870,17 @@ export default function App() {
           <Plus size={18} />
           {t.newCourse}
         </button>
+        <p className="nav-section-label">{lang === 'zh' ? '学习空间' : 'WORKSPACE'}</p>
         <nav aria-label={lang === 'zh' ? '主要导航' : 'Main navigation'}>
           {navItems.map(([key, Icon, label]) => (
             <button
               className={`nav-item ${view === key || (key === 'home' && ['plan', 'quiz', 'results'].includes(view)) ? 'active' : ''}`}
               key={key}
+              aria-current={
+                view === key || (key === 'home' && ['plan', 'quiz', 'results'].includes(view))
+                  ? 'page'
+                  : undefined
+              }
               onClick={() => navigate(key)}
             >
               <Icon size={18} />
@@ -844,12 +892,6 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="loop-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <p>{lang === 'zh' ? '为好奇心，留一点空间。' : 'Make room for curiosity.'}</p>
           <button className="connection" onClick={() => navigate('settings')}>
             <span className={`connection-dot ${config?.generationAvailable ? 'connected' : ''}`} />
             {config?.generationAvailable
@@ -944,22 +986,20 @@ export default function App() {
                   <section className="composer-section">
                     <div className="heading-line">
                       <div>
-                        <span className="eyebrow">{t.workspace}</span>
                         <h1>{t.homeTitle}</h1>
                         <p className="page-subtitle">{t.homeSub}</p>
                       </div>
-                      <div className="notebook-graphic" aria-hidden="true">
-                        <svg viewBox="0 0 150 120">
-                          <path d="m27 15 88 10 3 80-90-11Z" />
-                          <path d="m37 11 88 10 3 80-90-11Z" />
-                          <path d="m48 39 49 5m-49 7 49 5m-47 7 31 3" />
-                          <circle cx="109" cy="83" r="24" />
-                          <path d="m99 83 7 7 14-15" />
-                          <path d="m8 44 9 1m-3-16 7 5m100-26-1 10" />
-                        </svg>
-                      </div>
                     </div>
                     <form className="course-composer" onSubmit={makePlan}>
+                      <div className="composer-title">
+                        <BookOpen size={20} />
+                        <h2>{t.newCourse}</h2>
+                        <span>
+                          {lang === 'zh'
+                            ? '从主题或资料开始'
+                            : 'Start with a topic or your materials'}
+                        </span>
+                      </div>
                       <div className="composer-tabs" role="tablist" aria-label={t.newCourse}>
                         {[
                           ['search', Search, t.search],
@@ -970,6 +1010,25 @@ export default function App() {
                             type="button"
                             role="tab"
                             aria-selected={mode === value}
+                            tabIndex={mode === value ? 0 : -1}
+                            onKeyDown={(event) => {
+                              const modes = ['search', 'text', 'upload'];
+                              const current = modes.indexOf(mode);
+                              const next =
+                                event.key === 'ArrowRight'
+                                  ? (current + 1) % modes.length
+                                  : event.key === 'ArrowLeft'
+                                    ? (current + modes.length - 1) % modes.length
+                                    : event.key === 'Home'
+                                      ? 0
+                                      : event.key === 'End'
+                                        ? modes.length - 1
+                                        : -1;
+                              if (next < 0) return;
+                              event.preventDefault();
+                              setMode(modes[next]);
+                              document.getElementById(`tab-${modes[next]}`)?.focus();
+                            }}
                             aria-controls="composer-content"
                             id={`tab-${value}`}
                             className={mode === value ? 'selected' : ''}
@@ -1106,7 +1165,7 @@ export default function App() {
                             {courses.length.toString().padStart(2, '0')}
                           </span>
                         </h2>
-                        <p>{t.coursesSub}</p>
+                        <p className="library-caption">{t.coursesSub}</p>
                       </div>
                       <button
                         className="text-button import-button"
@@ -1152,16 +1211,21 @@ export default function App() {
                         )
                         .map((item, index) => (
                           <article className="course-row" key={item.id}>
-                            <div className="course-illustration">
-                              <CourseArt
-                                type={
-                                  /fraction|分数|math/i.test(item.title + item.subject)
-                                    ? 0
-                                    : /photo|光合|science|科学/i.test(item.title + item.subject)
-                                      ? 1
-                                      : 2
-                                }
-                              />
+                            <div className="course-card-top">
+                              <div className="course-illustration">
+                                <CourseArt
+                                  type={
+                                    /fraction|分数|math/i.test(item.title + item.subject)
+                                      ? 0
+                                      : /photo|光合|science|科学/i.test(item.title + item.subject)
+                                        ? 1
+                                        : 2
+                                  }
+                                />
+                              </div>
+                              <span className="course-order" aria-hidden="true">
+                                {String(index + 1).padStart(2, '0')}
+                              </span>
                             </div>
                             <div className="course-info">
                               <span className="course-meta">
@@ -1741,24 +1805,31 @@ export default function App() {
                       <h2>{t.openmaic}</h2>
                       <p>{t.openmaicSub}</p>
                       <div className="handoff-actions">
-                        <button className="primary-button" onClick={getBrief} disabled={busy}>
+                        <button
+                          className="primary-button"
+                          onClick={openClassroom}
+                          disabled={
+                            busy || !config?.openmaicAvailable || !config?.generationAvailable
+                          }
+                        >
+                          {openingClassroom ? (
+                            <LoaderCircle className="spin" size={16} />
+                          ) : (
+                            <GraduationCap size={17} />
+                          )}
+                          {openingClassroom ? t.openingClassroom : t.openClassroom}
+                        </button>
+                        <button className="secondary-button" onClick={getBrief} disabled={busy}>
                           <ArrowDownToLine size={16} />
                           {t.downloadBrief}
                         </button>
-                        {safeUrl(brief?.url) && (
-                          <a
-                            className="secondary-button"
-                            href={safeUrl(brief.url)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {t.openClassroom}
-                            <ArrowUpRight size={15} />
-                          </a>
-                        )}
                       </div>
                       <p className="small-note">
-                        {config?.openmaicAvailable ? t.openmaicHint : t.openmaicMissing}
+                        {!config?.openmaicAvailable
+                          ? t.openmaicMissing
+                          : !config?.generationAvailable
+                            ? t.openmaicModelMissing
+                            : t.openmaicHint}
                       </p>
                       <a
                         className="attribution"
@@ -1835,48 +1906,76 @@ export default function App() {
                   <p className="page-subtitle">{t.setupSub}</p>
                   <div className="service-status">
                     {[
-                      [t.generation, config?.generationAvailable],
-                      [t.searchService, config?.searchAvailable],
-                      [t.classroom, config?.openmaicAvailable],
-                    ].map(([label, enabled]) => (
+                      [
+                        t.generation,
+                        config?.generationAvailable,
+                        config?.generationAvailable ? t.enabled : t.notConfigured,
+                      ],
+                      [
+                        t.searchService,
+                        config?.searchAvailable,
+                        config?.searchAvailable ? t.enabled : t.notConfigured,
+                      ],
+                      [
+                        t.classroom,
+                        config?.openmaicStatus?.ready,
+                        config?.openmaicStatus?.ready
+                          ? t.openmaicReady
+                          : config?.openmaicStatus?.state === 'starting'
+                            ? t.openmaicStarting
+                            : ['error', 'failed'].includes(config?.openmaicStatus?.state)
+                              ? t.openmaicFailed
+                              : config?.openmaicStatus?.installed
+                                ? t.openmaicInstalled
+                                : lang === 'zh'
+                                  ? '未安装'
+                                  : 'Not installed',
+                      ],
+                    ].map(([label, enabled, status]) => (
                       <div key={label}>
                         <span>{label}</span>
                         <strong className={enabled ? 'enabled' : ''}>
                           <span className="connection-dot" />
-                          {enabled ? t.enabled : t.notConfigured}
+                          {status}
                         </strong>
                       </div>
                     ))}
                   </div>
-                  <ol className="setup-steps">
-                    {[
-                      [t.setupStep1, t.setupStep1Text],
-                      [t.setupStep2, t.setupStep2Text],
-                      [t.setupStep3, t.setupStep3Text],
-                    ].map(([title, content], index) => (
-                      <li key={title}>
-                        <span className="setup-index">0{index + 1}</span>
-                        <div>
-                          <h2>{title}</h2>
-                          <p>{content}</p>
-                          {index === 0 && <code>cp .env.example .env</code>}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                  <p className="setup-note">
-                    <Info size={17} />
-                    {t.setupNote}
-                  </p>
-                  <a
-                    className="primary-button"
-                    href={`${REPO}/blob/main/docs/configuration.md`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t.fullGuide}
-                    <ArrowUpRight size={16} />
-                  </a>
+                  <ModelSettings lang={lang} onSaved={setConfig} config={config} />
+                  <details className="manual-configuration">
+                    <summary>
+                      {lang === 'zh' ? '手动配置与部署说明' : 'Manual configuration and deployment'}
+                    </summary>
+                    <ol className="setup-steps">
+                      {[
+                        [t.setupStep1, t.setupStep1Text],
+                        [t.setupStep2, t.setupStep2Text],
+                        [t.setupStep3, t.setupStep3Text],
+                      ].map(([title, content], index) => (
+                        <li key={title}>
+                          <span className="setup-index">0{index + 1}</span>
+                          <div>
+                            <h2>{title}</h2>
+                            <p>{content}</p>
+                            {index === 0 && <code>cp .env.example .env</code>}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="setup-note">
+                      <Info size={17} />
+                      {t.setupNote}
+                    </p>
+                    <a
+                      className="primary-button"
+                      href={`${REPO}/blob/main/docs/configuration.md`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t.fullGuide}
+                      <ArrowUpRight size={16} />
+                    </a>
+                  </details>
                   <section className="voice-settings">
                     <h2>
                       <Volume2 size={20} />
@@ -1994,9 +2093,7 @@ export default function App() {
             </>
           )}
           <footer className="workspace-footer">
-            <span>
-              StudyLoop<span className="footer-dot">.</span>
-            </span>
+            <span>StudyLoop</span>
             <span>
               {lang === 'zh'
                 ? '让每一次练习，都通向理解。'

@@ -6,11 +6,12 @@ Contributions that improve learning quality, source transparency, accessibility,
 
 ## Local development
 
-Use Node.js 22.13+ and npm. Work in a new branch and use the repository's lockfile.
+Use Node.js 22 (22.13 or later in the 22 release line), npm, and Corepack. Work in a new branch and use the repository's lockfile.
 
 ```bash
 npm ci
 cp .env.example .env
+npm run classroom:install
 npm run dev
 ```
 
@@ -22,6 +23,7 @@ The frontend is at `http://localhost:5173`, with the API on port 3210. Original 
 npm run check
 npx playwright install chromium
 npm run test:e2e
+npm run test:classroom
 ```
 
 Run browser acceptance checks for changes to learner flows, accessibility, or API interactions. Include what changed, why, and how it was verified. Call out limitations: a mocked provider response is not a verified live vendor call, and exporting a brief is not a completed OpenMAIC classroom.
@@ -40,7 +42,7 @@ Keep changes focused. Preserve the immutable submitted-attempt contract, answer 
 
 Document request protocol, authentication, endpoint configuration, model IDs, failure cases, and a mock-backed test. Do not embed a new vendor's key or the maintainer's local configuration. Unsupported custom authentication must be explicit.
 
-For deeper OpenMAIC integration, pin an upstream version and preserve its copyright/license notices. Keep thanks to OpenMAIC prominent and document downstream changes accurately. Test the actual generated classroom, including student interaction and return-to-practice behaviour, before claiming full integration.
+The bundled OpenMAIC source is pinned and verified by hash. Make classroom changes in `integrations/openmaic/overlay/`, then rebuild with `npm run classroom:install`. Preserve upstream copyright/license notices, the LGPL library source and replacement path, and prominent thanks to OpenMAIC. See [the integration guide](docs/openmaic.md). Test the actual generated classroom, including student interaction and return-to-practice behaviour. The `test:classroom` suite exercises the real bundled Next.js server against a local synthetic model fixture; it requires a completed classroom build.
 
 ## Reporting bugs and security issues
 

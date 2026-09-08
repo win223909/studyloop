@@ -6,3 +6,5 @@ tmp
 output
 test-results
 playwright-report
+
+.runtime

@@ -10,3 +10,13 @@ test-results
 playwright-report
 *.log
 .DS_Store
+
+# Private configuration written by the local settings form.
+private-settings/
+*.env
+**/*.env
+
+.runtime/
+.desktop/
+*.command
+桌面测试说明.md

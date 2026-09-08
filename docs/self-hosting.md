@@ -1,8 +1,8 @@
 # Self-hosting / 自行部署
 
-StudyLoop runs as one Node.js process with a local data directory. The first release is suitable for personal use and small trusted groups. A public GitHub repository does not mean your running instance should be open to everyone.
+StudyLoop runs as one StudyLoop API process with a local data directory and a managed internal OpenMAIC process. The first release is suitable for personal use and small trusted groups. A public GitHub repository does not mean your running instance should be open to everyone.
 
-本版采用单个 Node.js 进程和本地数据目录，适合个人或小范围可信用户。开源代码公开与学习记录公开是两回事；共享运行实例时需要配置访问保护。
+本版由一个 StudyLoop API 进程管理本地数据目录及内部 OpenMAIC 课堂进程，适合个人或小范围可信用户。开源代码公开与学习记录公开是两回事；共享运行实例时需要配置访问保护。
 
 ## Local computer
 
@@ -13,6 +13,8 @@ npm ci
 npm run build
 npm start
 ```
+
+Use Node.js 22 (22.13 or later in the 22 release line), npm, and Corepack. The first build installs the pinned classroom dependencies and compiles Next.js; allow several minutes and several GB of working disk space. The classroom starts lazily on first access and stops with StudyLoop. No separate classroom address or provider setup is needed.
 
 `DATA_DIR` defaults to `./data`. The server stores sessions, generated courses, course plans, immutable attempts, practice responses, and generation counters there. Provider keys are read from the environment and are not written to the course store. Keep both the data directory and `.env` private.
 
@@ -31,6 +33,8 @@ curl http://127.0.0.1:3210/api/health
 ```
 
 The [Compose file](../compose.yaml) publishes only `127.0.0.1:3210`, runs the app as a non-root container user, and mounts the `studyloop-data` named volume at `/app/data`. The application listens on all interfaces inside the container so Docker can forward to it. Container environment values fix the internal port and data path; changing `.env` alone does not change the published port mapping.
+
+One image contains both production servers, the pinned upstream source archive, overlay, and license notices. Only the StudyLoop port is published; the classroom child stays internal. See [classroom rebuilding](openmaic.md#rebuild-or-modify-the-classroom--重建与修改课堂) to modify or replace its bundled libraries.
 
 The build excludes `.env`, local data, and other private files through `.dockerignore`. Secrets are supplied at runtime, not baked into the image. Review local changes before building a shareable image.
 
@@ -52,12 +56,13 @@ If a tunnel agent runs **on the host**, it can target the host's loopback public
 
 ## Limits, persistence, and backups
 
-- Run **one app process per data volume**. The JSON store's update queue coordinates within one process; it is not a distributed database.
+- Run **one StudyLoop API process per data volume**. Its internal classroom child does not own this JSON store. The JSON store's update queue coordinates within one process; it is not a distributed database.
 - Model requests have a timeout, bounded question counts, a shared daily request cap, and a concurrency limit. These are not a monetary quota; configure spending limits with the provider.
 - Generation uses synchronous HTTP with sequential model calls. A proxy can time out before the server finishes; there is no durable background job/resume. Check the library before retrying and test your proxy's request limits with your chosen model.
 - Files are processed in memory. Uploads are limited to **8 MB**, PDF documents to **60 pages**, and extracted/pasted text to **36,000 characters**. Text below 400 characters is rejected. Scanned PDFs require OCR before upload.
 - Session cookies last 90 days. There is no cross-device login, cookie recovery, automated record retention policy, or user-facing deletion workflow in this alpha. Operators control stored data and backups.
-- Stop the app before copying the data directory or taking a consistent volume backup. Back up `.env` separately in private storage. Restore into the same one-process deployment and check a known course and attempt afterward.
+- OpenMAIC classrooms are stored in each browser's IndexedDB, not in `DATA_DIR`. Export them from the classroom before clearing browser storage or changing devices. Server-volume backups do not contain those lessons. The `.runtime` directory contains rebuildable code/dependencies; rebuilding it does not erase browser storage.
+- Stop the app before copying the data directory or taking a consistent volume backup. Back up `.env` separately in private storage. Restore into the same single-instance deployment and check a known course and attempt afterward.
 
 For a Compose volume backup, create a private backup directory and use a temporary container from the same service definition:
 

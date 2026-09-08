@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="64" viewBox="0 0 310 64" role="img" aria-labelledby="title description">
+  <title id="title">StudyLoop</title>
+  <desc id="description">StudyLoop wordmark with an original open book and circular learning arrow.</desc>
+  <path d="M52 17A25 25 0 1 1 37 7.5" fill="none" stroke="#315BFF" stroke-width="5" stroke-linecap="round"/>
+  <path d="m36 2 10 8-12 4Z" fill="#315BFF"/>
+  <path d="m17 22 13 4v19l-13-4Zm17 4 13-4v19l-13 4Z" fill="#111B35"/>
+  <text x="77" y="45" fill="#111B35" font-family="Inter, Arial, Helvetica, sans-serif" font-size="38" font-weight="700" letter-spacing="-1.5">Study<tspan fill="#315BFF">Loop</tspan></text>
+</svg>

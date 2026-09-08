@@ -1,6 +1,6 @@
 # Architecture
 
-StudyLoop is a small, self-hostable application: a React/Vite frontend, an Express API, and a file-backed store. Course data is independent of a school, textbook, or model vendor. The application runs as one process per data directory.
+StudyLoop is a small, self-hostable application: a React/Vite frontend, an Express API, and a file-backed store. Course data is independent of a school, textbook, or model vendor. One StudyLoop API process owns each data directory and manages an internal OpenMAIC Next.js child process.
 
 ```mermaid
 flowchart TD
@@ -10,25 +10,32 @@ flowchart TD
   API --> Samples[Original example packs]
   Core --> Search[Wikipedia or Brave excerpts]
   Core --> Model[Configured model API]
-  API --> Bridge[OpenMAIC brief builder]
-  Bridge --> Download[Markdown download]
-  Download -. User uploads material .-> Classroom[Separate OpenMAIC deployment]
+  API --> Handoff[Owned attempt handoff]
+  Handoff --> Proxy[Authenticated classroom proxy]
+  Proxy --> Classroom[Bundled OpenMAIC child process]
+  Classroom --> Model
+  Browser --> BrowserStore[Classroom IndexedDB]
 ```
 
 ## Code map
 
-| Path                              | Responsibility                                                                    |
-| --------------------------------- | --------------------------------------------------------------------------------- |
-| `src/`                            | Learner flow, bilingual interface, quiz and review screens                        |
-| `server/app.js`                   | HTTP routes, session ownership, access gate, request limits                       |
-| `server/store.js`                 | Local JSON persistence, atomic file replacement, serialized local counter updates |
-| `server/uploads.js`               | Bounded text/PDF extraction without OCR                                           |
-| `server/core/schema.js`           | Validated portable course contract, public projection, grading                    |
-| `server/core/providers.js`        | Search, model protocols, planning, generation, review                             |
-| `server/core/samples.js`          | Loading original sample packs                                                     |
-| `server/integrations/openmaic.js` | Identity-free targeted Markdown lesson brief, no network calls                    |
-| `examples/`                       | Original reusable educational course packs                                        |
-| `tests/`                          | Unit, protocol, integration, and browser acceptance coverage                      |
+| Path                                      | Responsibility                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------- |
+| `src/`                                    | Learner flow, bilingual interface, quiz and review screens                        |
+| `server/app.js`                           | HTTP routes, session ownership, access gate, request limits                       |
+| `server/store.js`                         | Local JSON persistence, atomic file replacement, serialized local counter updates |
+| `server/uploads.js`                       | Bounded text/PDF extraction without OCR                                           |
+| `server/core/schema.js`                   | Validated portable course contract, public projection, grading                    |
+| `server/core/providers.js`                | Search, model protocols, planning, generation, review                             |
+| `server/core/samples.js`                  | Loading original sample packs                                                     |
+| `server/integrations/openmaic.js`         | Targeted learning context and optional Markdown brief from the saved attempt      |
+| `server/integrations/openmaic-runtime.js` | Starts and stops the internal Next.js runtime                                     |
+| `server/integrations/openmaic-proxy.js`   | Session-gated proxy and shared model routing                                      |
+| `integrations/openmaic/overlay/`          | Source changes for classic classrooms, handoff, and managed settings              |
+| `vendor/openmaic/`                        | Pinned clean source archive, integrity manifest, and license notices              |
+| `scripts/build-openmaic.mjs`              | Verified source extraction, overlay, dependency install, and standalone build     |
+| `examples/`                               | Original reusable educational course packs                                        |
+| `tests/`                                  | Unit, protocol, integration, and browser acceptance coverage                      |
 
 ## Course creation and review
 
@@ -42,7 +49,7 @@ A normal new course uses one outline call and three bank-related calls (authorin
 
 ## Attempt immutability
 
-An attempt stores its question text, choices, selected answers, correct indexes, explanations, and lesson snapshot. The persistence record also holds the source course. Replay, practice grading, and OpenMAIC export refer to that snapshot, so later course imports do not rewrite a submitted result. Follow-up practice is saved separately and cannot change the original score.
+An attempt stores its question text, choices, selected answers, correct indexes, explanations, and lesson snapshot. The persistence record also holds the source course. Replay, practice grading, and OpenMAIC handoff refer to that snapshot, so later course imports do not rewrite a submitted result. Follow-up practice is saved separately and cannot change the original score.
 
 The ordinary public course projection excludes answers and lesson/practice keys until submission. Explicit course export returns the full bank for educational reuse; exam secrecy is outside the product contract.
 
@@ -54,8 +61,10 @@ JSON file writes use private permissions and atomic replacement. A single-proces
 
 ## Integration boundary
 
-OpenMAIC is a separate system in this release. StudyLoop creates a portable teaching brief and optionally shows an operator-configured deployment link. It neither reuses API credentials nor submits materials automatically. See [the OpenMAIC contract](openmaic.md) for compatibility evidence and roadmap boundaries.
+OpenMAIC is bundled from a pinned clean source archive plus a visible StudyLoop overlay. The API lazily starts its standalone Next.js child and proxies an allowlist of classroom routes through StudyLoop session checks. An owned attempt creates the handoff; the learner confirms the outline before generating up to six classic scenes. The classroom uses server-selected provider/model settings, and client-supplied keys or endpoint overrides are not accepted.
+
+Classrooms live in browser IndexedDB, with export for backups. Server classroom persistence, arbitrary uploads, Pro/PBL, cloud media, and MP4 export are disabled. Returning to the original attempt preserves its score; there is no automatic completion receipt or score sync. See [the OpenMAIC guide](openmaic.md) for source provenance, rebuild instructions, and supported features.
 
 ## Operational boundary
 
-Model adapters use server configuration only; the frontend cannot select arbitrary remote endpoints or supply raw provider headers. Search uses known provider endpoints, and this alpha does not fetch arbitrary submitted URLs. Generation has bounded concurrency and a persisted UTC daily request counter, but provider cost must still be controlled at the provider account. [Security](../SECURITY.md) and [self-hosting](self-hosting.md) describe the remaining limits.
+Generation uses server configuration only; a learner cannot override the model endpoint or raw provider headers. The authenticated local management form can update the operator's configuration under the restrictions documented in [configuration](configuration.md). Search uses known provider endpoints, and this alpha does not fetch arbitrary submitted URLs. Generation has bounded concurrency and a persisted UTC daily request counter, but provider cost must still be controlled at the provider account. [Security](../SECURITY.md) and [self-hosting](self-hosting.md) describe the remaining limits.

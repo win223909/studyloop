@@ -13,3 +13,12 @@ test-results/
 *.pem
 *.key
 coverage/
+
+# Private configuration written by the local settings form.
+private-settings/
+*.env
+**/*.env
+
+# Extracted and built bundled classroom runtime
+.runtime/
+.desktop/

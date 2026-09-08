@@ -1,0 +1,14 @@
+{
+  "project": "OpenMAIC",
+  "version": "1.0.0",
+  "commit": "dfebbcf33f3a56064129903faeab70a9e4243146",
+  "sourceUrl": "https://github.com/THU-MAIC/OpenMAIC",
+  "sha256": "2f816a6d037d8fb042a26cc6afc759c29eca9ec9ad9d7f430e8f40ba1a0ba674",
+  "archive": "source.tar.gz",
+  "excludedUpstreamPaths": [
+    "assets",
+    ".github",
+    ".codegraph"
+  ],
+  "note": "Clean Git source snapshot. Exclusions contain repository automation and README demonstration media; runtime source, public assets, workspace packages and license files are retained."
+}
