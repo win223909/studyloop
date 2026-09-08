@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import Logo from './Brand.jsx';
 import ModelSettings from './ModelSettings.jsx';
+import { createApiError, formatApiError, isModelConfigurationError } from './api-errors.js';
 
 const REPO = 'https://github.com/win223909/studyloop';
 const COPY = {
@@ -139,7 +140,8 @@ const COPY = {
     downloadBrief: '下载课堂学习提纲',
     openClassroom: '生成互动课堂',
     openingClassroom: '正在准备课堂…',
-    openmaicHint: '先确认最多 6 个场景的大纲，再生成课堂；每个场景通常调用模型两次，并计入每日生成额度。',
+    openmaicHint:
+      '先确认最多 6 个场景的大纲，再生成课堂；每个场景通常调用模型两次，并计入每日生成额度。',
     openmaicMissing: '内置课堂模块尚未安装。部署者安装模块后即可使用，教学提纲仍可下载。',
     openmaicModelMissing: '先在“模型与设置”中配置模型，课堂会直接复用这组配置。',
     openmaicInstalled: '已安装',
@@ -446,7 +448,7 @@ async function api(path, options = {}) {
       `HTTP ${response.status}: ${response.statusText || 'Unexpected server response'}`,
     );
   }
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) throw createApiError(data, response.status);
   return data;
 }
 function safeUrl(value) {
@@ -560,7 +562,7 @@ export default function App() {
     try {
       await fn();
     } catch (err) {
-      setError(err.message || String(err));
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -580,7 +582,7 @@ export default function App() {
         setAuthenticated(session.authenticated || !session.accessRequired);
         if (session.authenticated || !session.accessRequired) await loadLibrary();
       } catch (err) {
-        if (active) setError(err.message);
+        if (active) setError(err);
       } finally {
         if (active) setInitializing(false);
       }
@@ -927,7 +929,13 @@ export default function App() {
               <Info size={18} />
               <div>
                 <strong>{t.error}</strong>
-                <p>{error}</p>
+                <p>{formatApiError(error, lang)}</p>
+                {isModelConfigurationError(error) && (
+                  <button className="text-button" onClick={() => navigate('settings')}>
+                    {t.settings}
+                    <ArrowRight size={14} />
+                  </button>
+                )}
               </div>
               <button aria-label={t.dismiss} onClick={() => setError('')}>
                 <X size={16} />

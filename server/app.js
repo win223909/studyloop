@@ -647,7 +647,7 @@ export async function createApp(options = {}) {
             ? 422
             : 502,
         )
-        .json({ error: error.publicMessage });
+        .json({ error: error.publicMessage, code: error.code });
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
     if (error instanceof multer.MulterError)
       return res.status(400).json({ error: 'Upload limit exceeded. Maximum file size: 8 MB.' });

@@ -2,6 +2,30 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+test('course generation model errors retain the topic and link to model settings', async ({
+  page,
+}) => {
+  await page.route('**/api/plans', (route) =>
+    route.fulfill({
+      status: 502,
+      json: { code: 'provider_model', error: 'raw-upstream-unknown-model-body' },
+    }),
+  );
+  await page.goto('/');
+  await page.locator('#course-topic').fill('Fractions');
+  await page.locator('.composer-options input').fill('Grade 6');
+  await page.locator('.composer-footer .primary-button').click();
+  const alert = page.locator('.error-message');
+  await expect(alert).toContainText('核对主模型 ID');
+  await expect(alert).not.toContainText('raw-upstream');
+  await expect(page.locator('#course-topic')).toHaveValue('Fractions');
+  await page.getByRole('button', { name: 'Switch to English' }).click();
+  await expect(alert).toContainText('Check the Primary model ID');
+  await expect(alert).not.toContainText('核对主模型');
+  await alert.getByRole('button', { name: 'Models & settings', exact: true }).click();
+  await expect(page.locator('.settings-page')).toBeVisible();
+});
+
 async function expectNoHorizontalOverflow(page) {
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))

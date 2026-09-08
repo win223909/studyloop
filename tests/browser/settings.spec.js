@@ -289,6 +289,12 @@ test('provider search preserves the current configuration and drafts while MiniM
 
   await provider.selectOption('minimax-cn');
   await expect(base).toHaveValue('https://api.minimax.cn/v1');
+  await expect(primaryModel).toHaveAttribute('list', /-LLM_MODEL-suggestions$/);
+  expect(
+    await page
+      .locator('datalist option')
+      .evaluateAll((options) => options.map((option) => option.value)),
+  ).toEqual(['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.5']);
   await expect(primaryModel).toHaveValue('');
   await expect(reviewModel).toHaveValue('');
   await expect(keyInput).toHaveValue('');
@@ -298,6 +304,11 @@ test('provider search preserves the current configuration and drafts while MiniM
 
   await provider.selectOption('minimax-intl');
   await expect(base).toHaveValue('https://api.minimax.io/v1');
+  expect(
+    await page
+      .locator('datalist option')
+      .evaluateAll((options) => options.map((option) => option.value)),
+  ).toEqual(['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.5']);
   await expect(primaryModel).toHaveValue('');
   await expect(reviewModel).toHaveValue('');
   await expect(keyInput).toHaveValue('');
@@ -413,4 +424,51 @@ test('an Azure resource address stays required after editing and clearing it', a
   expect(mock.tests()).toHaveLength(1);
   expect(mock.tests()[0].body.values.LLM_BASE_URL).toBe(azureBase);
   expect(mock.saves()).toHaveLength(0);
+});
+
+test('MiniMax rejects account numbers and shows localized model errors without exposing provider details', async ({
+  page,
+}) => {
+  const mock = await mockSettings(page, {
+    values: { LLM_BASE_URL: 'https://api.minimax.cn/v1', LLM_MODEL: 'MiniMax-M3' },
+    secrets: { LLM_API_KEY: true },
+  });
+  const testBodies = [];
+  await page.route('**/api/settings/test', async (route) => {
+    testBodies.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 502,
+      json: { code: 'provider_model', error: 'raw-provider-body-do-not-display' },
+    });
+  });
+  await openSettings(page);
+  const model = page.getByLabel('主模型 ID', { exact: true });
+  const key = page.getByLabel('模型 API 密钥', { exact: true });
+  await expect(page.locator('.ms-field-hint').filter({ hasText: '不是 Group ID' })).toBeVisible();
+  await model.fill('1234567890');
+  await page.getByRole('button', { name: '测试模型连接', exact: true }).click();
+  await expect(page.locator('.ms-field-error')).toContainText('不能填写数字账户编号');
+  expect(testBodies).toHaveLength(0);
+  await model.fill('custom-minimax-model-not-in-suggestions');
+  await page.getByRole('button', { name: '测试模型连接', exact: true }).click();
+  await expect(page.locator('.ms-error')).toContainText('核对主模型 ID');
+  await expect(page.locator('.ms-error')).toContainText('不要填写账户编号或 Group ID');
+  await expect(page.locator('body')).not.toContainText('raw-provider-body-do-not-display');
+  await expect(model).toHaveValue('custom-minimax-model-not-in-suggestions');
+  await expect(key).toHaveValue('');
+  expect(testBodies).toHaveLength(1);
+  expect(testBodies[0].secrets).toEqual({});
+  expect(mock.saves()).toHaveLength(0);
+  expect(mock.snapshot().values.LLM_MODEL).toBe('MiniMax-M3');
+
+  await page.getByRole('button', { name: 'Switch to English' }).click();
+  await expect(page.locator('.ms-error')).toContainText('Check the Primary model ID');
+  await expect(page.locator('.ms-error')).not.toContainText('核对主模型');
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByLabel('Model provider', { exact: true }).selectOption('custom');
+  await page.getByLabel('Primary model ID', { exact: true }).fill('1234567890');
+  await page.getByRole('button', { name: 'Test model connection', exact: true }).click();
+  await expect.poll(() => testBodies.length).toBe(2);
+  await expect(page.locator('.ms-field-error')).toHaveCount(0);
 });

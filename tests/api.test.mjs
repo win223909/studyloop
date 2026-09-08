@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../server/app.js';
 import { loadSamples } from '../server/core/samples.js';
+import { CoreError } from '../server/core/providers.js';
 
 async function instance(t, options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'studyloop-test-'));
@@ -38,6 +39,28 @@ async function instance(t, options = {}) {
   }
   return { browser, directory };
 }
+
+test('safe provider classification reaches the client without upstream response details', async (t) => {
+  const failure = new CoreError('provider_model', 'Check the model ID in Models & settings.');
+  failure.cause = new Error('upstream-private-response');
+  const { browser } = await instance(t, {
+    core: {
+      providerConfig: () => ({ generationAvailable: true }),
+      createPlan: async () => {
+        throw failure;
+      },
+    },
+  });
+  const result = await browser()('/api/plans', {
+    topic: 'Decimal division',
+    level: 'Primary school',
+    language: 'en',
+    mode: 'search',
+  });
+  assert.equal(result.status, 502);
+  assert.deepEqual(result.json, { code: 'provider_model', error: failure.publicMessage });
+  assert.ok(!JSON.stringify(result.json).includes('upstream-private-response'));
+});
 
 test('sample practice, unknown answers, immutable replay and owner isolation', async (t) => {
   const { browser } = await instance(t);

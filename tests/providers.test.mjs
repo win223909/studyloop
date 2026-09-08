@@ -264,6 +264,215 @@ test('provider failures and malformed JSON never echo secret or remote response 
     );
 });
 
+test('provider errors distinguish model, parameters, billing, routes, and rate limits safely', async () => {
+  const privateDetail = 'private-upstream-diagnostic';
+  const cases = [
+    // MiniMax can omit error.code entirely, including for an unknown numeric model ID.
+    [
+      400,
+      {
+        type: 'bad_request_error',
+        message: `invalid params, unknown model '1234567890' (2013) ${privateDetail}`,
+      },
+      'provider_model',
+    ],
+    [
+      400,
+      {
+        type: 'bad_request_error',
+        message: `invalid params, unsupported max_completion_tokens (2013) ${privateDetail}`,
+      },
+      'provider_request',
+    ],
+    [404, { code: 'model_not_found', message: privateDetail }, 'provider_model'],
+    [
+      400,
+      { type: 'invalid_request_error', param: 'model', message: privateDetail },
+      'provider_model',
+    ],
+    [404, { type: 'not_found_error', message: privateDetail }, 'provider_endpoint'],
+    [429, { type: 'insufficient_quota', message: privateDetail }, 'provider_quota'],
+    [429, { code: 'credit_balance_exhausted', message: privateDetail }, 'provider_quota'],
+    [429, { code: 'project_spend_limit_exceeded', message: privateDetail }, 'provider_quota'],
+    [
+      429,
+      {
+        type: 'rate_limit_error',
+        message: `You have reached your monthly spend limit. ${privateDetail}`,
+      },
+      'provider_quota',
+    ],
+    [
+      400,
+      {
+        type: 'invalid_request_error',
+        message: `Your credit balance is too low. ${privateDetail}`,
+      },
+      'provider_quota',
+    ],
+    [429, { type: 'rate_limit_error', message: privateDetail }, 'provider_rate_limit'],
+    [429, { status: 'RESOURCE_EXHAUSTED', message: privateDetail }, 'provider_rate_limit'],
+    [400, { status: 'INVALID_ARGUMENT', message: privateDetail }, 'provider_request'],
+    [
+      400,
+      {
+        code: 400,
+        status: 'INVALID_ARGUMENT',
+        message: privateDetail,
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'API_KEY_INVALID',
+            metadata: { key: env.LLM_API_KEY },
+          },
+        ],
+      },
+      'provider_auth',
+    ],
+    [400, { code: 'context_length_exceeded', message: privateDetail }, 'provider_context_limit'],
+    [403, { type: 'permission_error', message: privateDetail }, 'provider_auth'],
+    [402, { type: 'billing_error', message: privateDetail }, 'provider_quota'],
+    [408, { message: privateDetail }, 'provider_timeout'],
+    [503, { type: 'overloaded_error', message: privateDetail }, 'provider_unavailable'],
+  ];
+  for (const [status, upstreamError, expected] of cases) {
+    await assert.rejects(
+      () =>
+        testProvider({ env, fetch: async () => jsonResponse({ error: upstreamError }, status) }),
+      (failure) => {
+        assert.ok(failure instanceof CoreError);
+        assert.equal(
+          failure.code,
+          expected,
+          `HTTP ${status}, ${upstreamError.type || upstreamError.code || upstreamError.status}`,
+        );
+        assert.equal(failure.message, failure.publicMessage);
+        const exposed = `${JSON.stringify(failure)} ${failure.message} ${failure.stack}`;
+        assert.ok(!exposed.includes(privateDetail));
+        assert.ok(!exposed.includes(env.LLM_API_KEY));
+        assert.ok(!exposed.includes('1234567890'));
+        return true;
+      },
+    );
+  }
+});
+
+test('MiniMax HTTP 200 business failures are rejected before parsing model content', async () => {
+  for (const [statusCode, expected] of [
+    [1001, 'provider_timeout'],
+    [1002, 'provider_rate_limit'],
+    [1004, 'provider_auth'],
+    ['1008', 'provider_quota'],
+    [1024, 'provider_unavailable'],
+    [1026, 'provider_content_filter'],
+    [1027, 'provider_content_filter'],
+    [1039, 'provider_context_limit'],
+    [2013, 'provider_request'],
+    [2049, 'provider_auth'],
+    [2056, 'provider_quota'],
+    [9999, 'provider_http'],
+  ]) {
+    await assert.rejects(
+      () =>
+        testProvider({
+          env,
+          fetch: async () =>
+            jsonResponse({
+              base_resp: { status_code: statusCode, status_msg: 'private-business-diagnostic' },
+              choices: [{ message: { content: '{"ok":true}' } }],
+            }),
+        }),
+      (failure) =>
+        failure instanceof CoreError &&
+        failure.code === expected &&
+        !failure.message.includes('private-business-diagnostic'),
+    );
+  }
+  await assert.rejects(
+    () =>
+      testProvider({
+        env,
+        fetch: async () => jsonResponse({ error: { code: 'model_not_found' } }),
+      }),
+    (failure) => failure.code === 'provider_model',
+  );
+});
+
+test('successful business status and numeric deployment IDs remain valid', async () => {
+  const calls = [];
+  const result = await testProvider({
+    env: { ...env, LLM_MODEL: '1234567890' },
+    fetch: mockProvider(
+      [
+        jsonResponse({
+          base_resp: { status_code: 0, status_msg: 'success' },
+          choices: [
+            {
+              message: {
+                content: '{"ok":true,"error":"a model output field is not an API failure"}',
+              },
+            },
+          ],
+        }),
+      ],
+      'openai-compatible',
+      calls,
+    ),
+  });
+  assert.deepEqual(result.models, ['1234567890']);
+  assert.equal(calls[0].body.model, '1234567890');
+});
+
+test('malformed and oversized error bodies preserve useful HTTP errors without exposing content', async () => {
+  for (const [status, expected] of [
+    [401, 'provider_auth'],
+    [404, 'provider_endpoint'],
+    [429, 'provider_rate_limit'],
+    [502, 'provider_unavailable'],
+  ]) {
+    await assert.rejects(
+      () =>
+        testProvider({
+          env,
+          fetch: async () => new Response('<html>private-gateway-response</html>', { status }),
+        }),
+      (failure) =>
+        failure.code === expected && !failure.message.includes('private-gateway-response'),
+    );
+  }
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(40_000));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  await assert.rejects(
+    () => testProvider({ env, fetch: async () => new Response(body, { status: 404 }) }),
+    (failure) => failure.code === 'provider_endpoint',
+  );
+  assert.equal(cancelled, true);
+  await assert.rejects(
+    () =>
+      testProvider({
+        env,
+        fetch: async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error('private-stream-failure'));
+              },
+            }),
+            { status: 401 },
+          ),
+      }),
+    (failure) =>
+      failure.code === 'provider_auth' && !failure.message.includes('private-stream-failure'),
+  );
+});
+
 test('Wikipedia preserves search ranking and fetches each full extract separately', async () => {
   const requested = [];
   const sources = await searchSources('fractions', 'en', {
@@ -306,6 +515,38 @@ test('Wikipedia preserves search ranking and fetches each full extract separatel
   assert.equal(sources[0].kind, 'web');
   assert.match(sources[0].license, /CC BY-SA/);
   assert.ok(sources[0].retrievedAt);
+});
+
+test('Chinese encyclopedia queries separate connecting particles without corrupting subject terms', async () => {
+  for (const [topic, expected] of [
+    ['小数的除法', '小数 除法'],
+    ['C++的入门', 'C++ 入门'],
+    ['目的地', '目的地'],
+  ]) {
+    const sources = await searchSources(topic, 'zh', {
+      env: {},
+      fetch: async (url) => {
+        const request = new URL(url);
+        if (request.searchParams.get('list') === 'search') {
+          assert.equal(request.searchParams.get('srsearch'), expected);
+          return jsonResponse({ query: { search: [{ pageid: 10 }] } });
+        }
+        return jsonResponse({
+          query: {
+            pages: [
+              {
+                pageid: 10,
+                title: topic,
+                extract: sourceCourse.sources[0].text,
+                fullurl: 'https://zh.wikipedia.org/wiki/10',
+              },
+            ],
+          },
+        });
+      },
+    });
+    assert.equal(sources.length, 1);
+  }
 });
 
 test('Brave uses search excerpts only and does not fetch arbitrary result URLs', async () => {

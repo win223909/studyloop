@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { validateCourse, validateSource } from './schema.js';
+import { sourceExcerpt } from './source-excerpts.js';
 
 // Deliberately contain no provider response bodies, request headers, keys, or URLs.
 export class CoreError extends Error {
@@ -107,6 +108,178 @@ export async function testProvider(options = {}) {
   return { ok: true, models };
 }
 
+const PROVIDER_MESSAGES = {
+  auth: 'Model authentication failed. Check the API key and model permissions. 模型认证失败，请检查 API Key 和模型权限。',
+  model:
+    'The model ID is unavailable or unsupported. Check the provider model or deployment ID and its permissions. 模型 ID 不存在或不可用，请核对服务商的模型或部署 ID 及其权限。',
+  request:
+    'The provider rejected the request parameters. Check the token parameter, output limit, and JSON mode for this model. 服务商拒绝了请求参数，请核对该模型支持的 Token 参数、输出上限和 JSON 模式。',
+  endpoint:
+    'The API route or resource was not found. Check the provider protocol, Base URL, and model or deployment ID. 接口路径或资源不可用，请核对协议、接口地址及模型或部署 ID。',
+  quota:
+    'The provider balance or account allowance is exhausted. Check billing and usage limits, or wait for the allowance to reset. 服务商余额或账户额度不足，请检查账单与用量限制，或等待额度重置。',
+  rate_limit:
+    'The provider request limit was reached. Wait and retry, or check the provider usage limits. 服务商请求频率或用量达到限制，请稍后重试并检查用量限制。',
+  timeout:
+    'The model request timed out. Retry or reduce the material size. 模型请求超时，请重试或减少资料长度。',
+  unavailable:
+    'The model service is temporarily unavailable. Please retry later. 模型服务暂时不可用，请稍后重试。',
+  context_limit:
+    'The request exceeded the model token limit. Reduce the material size or output token limit. 请求超出模型的 Token 限制，请减少资料长度或输出 Token 上限。',
+  content_filter:
+    'The provider declined this content under its content policy. Review the course material before trying again. 服务商根据内容规则拒绝了本次请求，请检查课程资料。',
+  http: 'The model service could not complete the request. Check server configuration or retry later. 模型服务未能完成请求，请检查配置或稍后重试。',
+};
+
+const providerFailure = (kind) => error(`provider_${kind}`, PROVIDER_MESSAGES[kind]);
+const record = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const errorField = (value) => (typeof value === 'string' ? value.slice(0, 4096) : '');
+
+// Inspect only bounded, known error fields. Never retain a remote field on CoreError.
+// MiniMax uses base_resp for business failures even with HTTP 200.
+function classifyProviderFailure(status, payload) {
+  const detail = record(payload?.error) ? payload.error : {};
+  const business = record(payload?.base_resp) ? payload.base_resp : {};
+  const businessCode = Number(business.status_code);
+  const codes = [detail.code, detail.type, detail.status, payload?.type].map((value) =>
+    errorField(value).toLowerCase(),
+  );
+  if (Array.isArray(detail.details)) {
+    for (const item of detail.details.slice(0, 8)) {
+      if (item?.['@type'] === 'type.googleapis.com/google.rpc.ErrorInfo')
+        codes.push(errorField(item.reason).toLowerCase());
+    }
+  }
+  const has = (...values) => values.some((value) => codes.includes(value));
+  const message = [detail.message, business.status_msg, payload?.message, payload?.error]
+    .map(errorField)
+    .join(' ')
+    .toLowerCase();
+  if (
+    status === 401 ||
+    status === 403 ||
+    [1004, 2049].includes(businessCode) ||
+    has(
+      'authentication_error',
+      'invalid_api_key',
+      'api_key_invalid',
+      'unauthenticated',
+      'permission_denied',
+    )
+  )
+    return providerFailure('auth');
+  if (
+    status === 402 ||
+    [1008, 2056].includes(businessCode) ||
+    has(
+      'insufficient_quota',
+      'insufficient_balance',
+      'billing_error',
+      'billing_hard_limit_reached',
+      'billing_not_active',
+      'credit_balance_exhausted',
+      'credit_balance_too_low',
+      'organization_spend_limit_exceeded',
+      'project_spend_limit_exceeded',
+      'organization_usage_limit_exceeded',
+    ) ||
+    /(?:credit|account) balance.{0,60}(?:too low|insufficient|exhausted)|insufficient (?:balance|credits|quota)|(?:spend|spending|billing).{0,40}(?:limit|cap)|余额不足|额度不足/.test(
+      message,
+    )
+  )
+    return providerFailure('quota');
+  if (
+    businessCode === 1039 ||
+    has('context_length_exceeded', 'context_window_exceeded', 'max_tokens_exceeded')
+  )
+    return providerFailure('context_limit');
+  if ([1026, 1027].includes(businessCode) || has('content_filter', 'content_policy_violation'))
+    return providerFailure('content_filter');
+  if (status === 408 || businessCode === 1001 || has('request_timeout', 'timeout_error'))
+    return providerFailure('timeout');
+  if (
+    status === 429 ||
+    [1002, 1041, 2045].includes(businessCode) ||
+    has('rate_limit_error', 'rate_limit_exceeded', 'resource_exhausted')
+  )
+    return providerFailure('rate_limit');
+  if (
+    status >= 500 ||
+    [1000, 1024, 1033].includes(businessCode) ||
+    has('overloaded_error', 'api_error', 'internal', 'unavailable')
+  )
+    return providerFailure('unavailable');
+  if (
+    has(
+      'model_not_found',
+      'invalid_model',
+      'model_not_available',
+      'model_not_supported',
+      'deploymentnotfound',
+      'deployment_not_found',
+    ) ||
+    errorField(detail.param).toLowerCase() === 'model' ||
+    /\b(?:unknown|invalid|unsupported) model\b|\bmodels?\b.{0,160}(?:does not exist|not found|not supported|not available)|模型.{0,40}(?:不存在|不可用|不支持)|无效.{0,10}模型/.test(
+      message,
+    )
+  )
+    return providerFailure('model');
+  if (status === 404 || status === 405 || has('not_found', 'not_found_error'))
+    return providerFailure('endpoint');
+  if (
+    [400, 413, 415, 422].includes(status) ||
+    [1042, 2013].includes(businessCode) ||
+    has(
+      'invalid_request_error',
+      'bad_request_error',
+      'invalid_argument',
+      'invalid_parameter',
+      'unsupported_parameter',
+      'unknown_parameter',
+      'invalid_value',
+      'validation_error',
+    )
+  )
+    return providerFailure('request');
+  return providerFailure('http');
+}
+
+// Bound responses while reading rather than trusting Content-Length. Error bodies
+// get a smaller budget; invalid/oversized bodies fall back to the HTTP status.
+async function responseText(response, category, limit) {
+  let raw = '';
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let bytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > limit) {
+          await reader.cancel();
+          throw error(
+            `${category}_response`,
+            'The remote response exceeded the allowed size. Try a smaller request.',
+          );
+        }
+        raw += decoder.decode(value, { stream: true });
+      }
+      return raw + decoder.decode();
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  raw = await response.text();
+  if (Buffer.byteLength(raw) > limit)
+    throw error(
+      `${category}_response`,
+      'The remote response exceeded the allowed size. Try a smaller request.',
+    );
+  return raw;
+}
+
 async function fetchJson(url, init, options, category = 'provider') {
   const fetcher = options.fetch ?? globalThis.fetch;
   const timeout = config(options).timeout;
@@ -117,6 +290,15 @@ async function fetchJson(url, init, options, category = 'provider') {
       signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) {
+      if (category === 'provider') {
+        let payload;
+        try {
+          payload = JSON.parse(await responseText(response, category, 64_000));
+        } catch {
+          // Gateway HTML, malformed JSON, or a broken stream cannot hide the status.
+        }
+        throw classifyProviderFailure(response.status, payload);
+      }
       if (response.status === 401 || response.status === 403)
         throw error(
           `${category}_auth`,
@@ -134,40 +316,17 @@ async function fetchJson(url, init, options, category = 'provider') {
         `${category === 'provider' ? 'Model' : 'Search'} service could not complete the request. Check server configuration or retry later.`,
       );
     }
-    // Bound responses while reading, rather than trusting a Content-Length header.
-    let raw;
-    if (response.body?.getReader) {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let bytes = 0;
-      raw = '';
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bytes += value.byteLength;
-          if (bytes > 2_000_000) {
-            await reader.cancel();
-            throw error(
-              `${category}_response`,
-              'The remote response exceeded the allowed size. Try a smaller request.',
-            );
-          }
-          raw += decoder.decode(value, { stream: true });
-        }
-        raw += decoder.decode();
-      } finally {
-        reader.releaseLock();
-      }
-    } else {
-      raw = await response.text();
-      if (raw.length > 2_000_000)
-        throw error(
-          `${category}_response`,
-          'The remote response exceeded the allowed size. Try a smaller request.',
-        );
+    const payload = JSON.parse(await responseText(response, category, 2_000_000));
+    if (category === 'provider') {
+      const business = record(payload?.base_resp) ? payload.base_resp : {};
+      if (
+        (business.status_code !== undefined && Number(business.status_code) !== 0) ||
+        (payload?.error !== undefined && payload.error !== null && payload.error !== false) ||
+        payload?.type === 'error'
+      )
+        throw classifyProviderFailure(response.status, payload);
     }
-    return JSON.parse(raw);
+    return payload;
   } catch (cause) {
     if (cause instanceof CoreError) throw cause;
     if (cause?.name === 'AbortError' || cause?.name === 'TimeoutError')
@@ -338,11 +497,21 @@ export async function searchSources(topic, language = 'en', options = {}) {
     }));
   } else {
     const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
+    // Encyclopedia search works better with subject terms than connecting particles.
+    // Segment first so characters inside words (such as 目的地) are never removed.
+    const query =
+      lang === 'zh'
+        ? [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(topic)]
+            .map(({ segment }) => (['的', '和', '与', '及'].includes(segment) ? ' ' : segment))
+            .join('')
+            .replace(/\s+/g, ' ')
+            .trim() || topic
+        : topic;
     const url = new URL(endpoint);
     url.search = new URLSearchParams({
       action: 'query',
       list: 'search',
-      srsearch: topic,
+      srsearch: query,
       srnamespace: '0',
       srlimit: '3',
       format: 'json',
@@ -378,7 +547,7 @@ export async function searchSources(topic, language = 'en', options = {}) {
         return {
           id: `source-${index + 1}`,
           title: String(page.title || '').slice(0, 290),
-          text: String(page.extract).trim().slice(0, 10000),
+          text: sourceExcerpt(page.extract, 10000, topic),
           url:
             page.fullurl || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
           kind: 'web',

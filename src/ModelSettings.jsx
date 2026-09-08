@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import './model-settings.css';
+import { createApiError, formatApiError } from './api-errors.js';
 import {
   MODEL_PROVIDERS as PRESETS,
   PROVIDER_GROUPS,
@@ -72,6 +73,10 @@ const TEXT = {
     model: '主模型 ID',
     modelPlaceholder: '服务商提供的模型 ID',
     modelHint: '使用你的 API 账户实际可访问的模型；聊天产品名称不一定是模型 ID。',
+    minimaxModelHint:
+      '可选择 MiniMax-M3、MiniMax-M2.7、MiniMax-M2.5，或填写账户可用的其他模型 ID。模型 ID 区分大小写，不是 Group ID，请勿填写纯数字账户编号。',
+    minimaxNumericModel:
+      '这里需要 MiniMax 模型名称（例如 MiniMax-M3），不能填写数字账户编号或 Group ID。',
     apiKey: '模型 API 密钥',
     stored: '已保存',
     notStored: '未保存',
@@ -183,6 +188,10 @@ const TEXT = {
     modelPlaceholder: 'Model ID supplied by your provider',
     modelHint:
       'Use a model your API account can access. A chat product name may not be a model ID.',
+    minimaxModelHint:
+      'Choose MiniMax-M3, MiniMax-M2.7 or MiniMax-M2.5, or enter another model ID your account can access. Model IDs are case-sensitive, not Group IDs. Do not enter a numeric account number.',
+    minimaxNumericModel:
+      'Enter a MiniMax model name such as MiniMax-M3, not a numeric account number or Group ID.',
     apiKey: 'Model API key',
     stored: 'Saved',
     notStored: 'Not saved',
@@ -299,11 +308,7 @@ async function requestSettings(path, options = {}) {
     throw new Error(`HTTP ${response.status}`);
   }
   if (!response.ok) {
-    const error = new Error(
-      typeof result.error === 'string' ? result.error : `HTTP ${response.status}`,
-    );
-    error.status = response.status;
-    throw error;
+    throw createApiError(result, response.status);
   }
   return result;
 }
@@ -344,7 +349,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
         if (!controller.signal.aborted) adoptSnapshot(next);
       })
       .catch((err) => {
-        if (!controller.signal.aborted) setError(err.message);
+        if (!controller.signal.aborted) setError(err);
       })
       .finally(() => {
         if (!controller.signal.aborted) setBusy('');
@@ -354,6 +359,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
 
   const stored = snapshot?.secrets || {};
   const selectedProvider = PRESETS.find((item) => item.id === preset);
+  const isMiniMax = ['minimax-cn', 'minimax-intl'].includes(preset);
   const matchedProviders = searchProviders(providerSearch);
   const visibleProviders = matchedProviders.filter((item) => item.id !== 'custom');
   const selectedOutsideSearch =
@@ -420,13 +426,15 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
     try {
       adoptSnapshot(await requestSettings('/api/settings'));
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setBusy('');
     }
   };
   const validate = (action) => {
     const errors = {};
+    if (isMiniMax && /^\d+$/.test(values.LLM_MODEL.trim()))
+      errors.LLM_MODEL = t.minimaxNumericModel;
     if (!values.LLM_BASE_URL.trim()) {
       errors.LLM_BASE_URL = t.requiredBase;
     }
@@ -516,7 +524,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
         setTestResult({ ...next, dirty });
       }
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setConflict(err.status === 409);
     } finally {
       setBusy('');
@@ -534,7 +542,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
     key,
     label,
     hint,
-    { placeholder = '', type = 'text', maxLength = 500 } = {},
+    { placeholder = '', type = 'text', maxLength = 500, suggestions = [] } = {},
   ) => (
     <div className="ms-field">
       <label htmlFor={idFor(key)}>{label}</label>
@@ -549,7 +557,15 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
         aria-invalid={Boolean(fieldErrors[key])}
         autoComplete="off"
         spellCheck="false"
+        list={suggestions.length ? `${idFor(key)}-suggestions` : undefined}
       />
+      {suggestions.length > 0 && (
+        <datalist id={`${idFor(key)}-suggestions`}>
+          {suggestions.map((model) => (
+            <option key={model} value={model} />
+          ))}
+        </datalist>
+      )}
       <p className="ms-field-hint" id={`${idFor(key)}-hint`}>
         {hint}
       </p>
@@ -637,7 +653,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
         <CircleHelp size={23} />
         <div>
           <h2>{t.loadFailed}</h2>
-          <p role="alert">{error}</p>
+          <p role="alert">{formatApiError(error, lang)}</p>
           <button className="secondary-button" onClick={reload} disabled={Boolean(busy)}>
             <RefreshCw size={15} />
             {t.retry}
@@ -679,7 +695,7 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
           <CircleHelp size={19} />
           <div>
             <strong>{t.errorTitle}</strong>
-            <p>{error}</p>
+            <p>{formatApiError(error, lang)}</p>
             {conflict && <p>{t.stale}</p>}
           </div>
           <button type="button" onClick={() => setError('')} aria-label={t.dismiss}>
@@ -815,9 +831,10 @@ export default function ModelSettings({ lang = 'zh', onSaved, config }) {
                 placeholder: selectedProvider?.basePlaceholder || 'https://api.example.com/v1',
                 maxLength: 2000,
               })}
-              {textField('LLM_MODEL', t.model, t.modelHint, {
+              {textField('LLM_MODEL', t.model, isMiniMax ? t.minimaxModelHint : t.modelHint, {
                 placeholder: t.modelPlaceholder,
                 maxLength: 200,
+                suggestions: selectedProvider?.modelSuggestions,
               })}
               {secretField('LLM_API_KEY', t.apiKey, t.keyHint)}
               {identityChanged && stored.LLM_API_KEY && (

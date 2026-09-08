@@ -60,6 +60,26 @@ Fill the last line with **your own** key in `.env`. The empty line above is deli
 
 最后一行请在自己的 `.env` 中填写自己的密钥；文档和模板故意留空。更换服务商时同时检查地址、模型 ID 和密钥。DeepSeek 预设使用官方根域 `https://api.deepseek.com`；已保存的兼容 `/v1` 地址不会被静默改写。
 
+### MiniMax model ID example / MiniMax 模型 ID 示例
+
+For a mainland China API account, the following uses the model ID from [MiniMax's official example](https://platform.minimaxi.com/docs/api-reference/text-openai-api):
+
+```dotenv
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=https://api.minimax.cn/v1
+LLM_MODEL=MiniMax-M3
+LLM_TOKEN_PARAMETER=max_completion_tokens
+LLM_API_KEY=
+```
+
+**Model ID names the model**, such as `MiniMax-M3`; do not enter a numeric account/Group ID or an API key in this field. The official model list also includes `MiniMax-M2.7` and `MiniMax-M2.5`; check access for your account. For an international account, use `https://api.minimax.io/v1` and that account's own key, as shown in the [international documentation](https://platform.minimax.io/docs/api-reference/text-openai-api). Model suggestions are editable starting points, not a guarantee of account access or course quality. The key above is deliberately blank; enter your own key only in the private settings form or `.env`.
+
+上方是国内账户示例，主模型填写 `MiniMax-M3`。**模型 ID 是模型名称**，不要填写数字账户编号、Group ID 或 API Key。官方也列出 `MiniMax-M2.7`、`MiniMax-M2.5`，可用权限以自己的账户为准。国际账户改用 `https://api.minimax.io/v1` 及国际账户自己的密钥，国内和国际配置分别选择。界面中的模型建议仍可自行修改，不代表已验证账户权限或出题质量；示例密钥始终留空，仅在自己的私有配置中填写。
+
+If a complete question bank is cut short, increase **Maximum output tokens** in advanced settings within the model's limit, or choose fewer questions. For a six-question MiniMax-M3 bank, try `LLM_MAX_OUTPUT_TOKENS=16384` and `LLM_TIMEOUT_MS=180000`; these are adjustable starting values, not a guarantee that every request will fit. Longer outputs can take more time and incur more usage. A successful short connection test does not check this full-generation budget.
+
+如果完整题库提示输出截断，可在高级参数中调高**最大输出 token 数**（不超过模型限制），或减少题数。MiniMax-M3 生成六题时可尝试 `LLM_MAX_OUTPUT_TOKENS=16384`、`LLM_TIMEOUT_MS=180000`，再按实际结果调整；更长输出会增加耗时和用量，不能保证任意请求都能完成。简短的连接测试通过，不代表完整题库的输出预算已足够。
+
 ### Native Anthropic / 原生 Anthropic
 
 ```dotenv
@@ -201,7 +221,10 @@ Creating a plan uses one model call; creating its question bank normally uses th
 
 ## Optional search and OpenMAIC / 可选搜索与课堂
 
-- **Search:** default Wikipedia search needs no API key. Add your own `BRAVE_SEARCH_API_KEY` to use Brave Search excerpts. This version does not download arbitrary search-result pages; a short excerpt may be insufficient for a reliable course. Upload richer material when asked.
+- **Search:** default Wikipedia search needs no API key. Long articles retain their introduction and topic-relevant original passages; `[…]` marks omitted passages. You can open the source page to read the complete article. Add your own `BRAVE_SEARCH_API_KEY` to use Brave Search excerpts. This version does not download arbitrary search-result pages; a short excerpt may be insufficient for a reliable course. Upload richer material when asked.
+
+默认搜索无需密钥，使用 Wikipedia。长文章会保留导言与主题相关的原文段落，`[…]` 表示中间省略的内容，可打开来源页面查看全文。检索结果仍须通过课程相关性检查；若缺少相应教学内容，请粘贴或上传教材资料。
+
 - **OpenMAIC:** the real classic classroom is bundled by `npm run build` and starts automatically when first opened. It reuses the saved model configuration; no second key or external classroom address is needed. Create a classroom from a saved StudyLoop attempt and confirm its outline. The classroom library lists lessons saved in this browser. The former `OPENMAIC_URL` variable is retained only for legacy file compatibility and no longer controls navigation. [Classroom and rebuild guide](openmaic.md).
 
   **内置课堂：** `npm run build` 会同时构建真实经典课堂，首次打开时自动启动，复用已保存的模型配置，无需另填地址或密钥。创建入口在 StudyLoop 答卷中；课堂首页展示当前浏览器已保存的课堂。旧地址变量不再用于导航。
@@ -226,6 +249,10 @@ Creating a plan uses one model call; creating its question bank normally uses th
 | “Material insufficient”                                   | A timetable or keyword is not teaching evidence; upload relevant explanations or chapter text                                                     |
 | Local model works outside Docker only                     | Use a model-server address reachable from the container                                                                                           |
 | Daily request cap reached                                 | Wait for the server's UTC date reset or intentionally adjust the instance limit; check actual provider usage separately                           |
+
+**MiniMax HTTP 400 with `unknown model` (2013):** check the primary model ID first. An account/Group ID in `LLM_MODEL` is not a model name; replace it with an available ID such as `MiniMax-M3` and check any separate review model too. Keep the correct regional endpoint and its key. Test the corrected configuration, then save it; a test does not save changes. This error alone does not establish that the key is invalid.
+
+**MiniMax 返回 HTTP 400、`unknown model`（2013）：** 先核对“主模型 ID”，把误填的账户编号／Group ID 改为账户可用的模型名称，例如 `MiniMax-M3`；如果单独填写了复核模型，也要检查。确认地址和密钥属于同一区域，测试修正后的配置，再点击保存；测试本身不会保存。仅凭这个错误不能判定密钥失效。
 
 Generation is a synchronous HTTP operation in this alpha, not a durable background job. A slow model's three sequential bank calls can exceed a reverse proxy's request timeout even when each model call is within its own timeout. Check the course library after reconnecting before retrying: the server may have finished after the browser lost its connection. There is no automatic job resume or exactly-once retry guarantee. Start with direct local access and a small bank when diagnosing this.
 
