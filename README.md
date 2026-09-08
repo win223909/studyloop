@@ -20,7 +20,7 @@ StudyLoop is a self-hosted learning app for students. Start with a subject, a fe
 - **Create a course:** search by topic, paste text, or upload a text-based PDF, TXT, or Markdown file. Review the proposed objectives before generating 4, 6, or 8 multiple-choice questions.
 - **Use textbooks:** open the official Smart Education textbook catalogue, then provide a permitted chapter with its edition/page information and source link. Authenticated textbook retrieval is not automated. [Textbook guide](docs/user-guide.md#mainland-china-textbooks--国内教材).
 - **Manage learning records:** preview and delete an attempt with its practice and local files; retain shared courses, and retry linked classroom cleanup when interrupted.
-- **Inspect the evidence:** course sources and question source references remain available. Keyword search uses Wikipedia by default; an optional Brave Search adapter uses clearly identified search excerpts.
+- **Inspect the evidence:** course sources and question source references remain available. Keyword search uses Wikipedia by default. If coverage is insufficient, the model can suggest up to three focused search terms for one additional search and review round. A course is still refused when evidence is inadequate; optional Brave Search broadens discovery to clearly identified web excerpts.
 - **Practise and revisit:** submit an answer or “I don't know,” get an immutable result, review explanations, and try a separate consolidation question without changing your original score.
 - **Teach the next step:** use a short explanation and browser read-aloud, then generate a focused lesson in the bundled OpenMAIC classroom without leaving the project.
 - **Keep courses portable:** export and import validated JSON course packs.
@@ -67,7 +67,7 @@ Open the same localhost address. The provided Compose file binds the published p
 4. Review the saved answer sheet. Open a short explanation and try its follow-up question.
 5. For a deeper lesson, choose **Generate an interactive classroom** on the result. Confirm its outline, learn in the bundled OpenMAIC classroom, then return to the original attempt for practice.
 
-See the [user guide](docs/user-guide.md) for the complete English/Chinese walkthrough.
+Wikipedia is an encyclopedia, so a school textbook chapter may have little coverage or use different terminology. Try the suggested narrower topics or paste/upload the relevant chapter when coverage remains insufficient. Automatic follow-up search applies only to keyword search; pasted and uploaded material is not sent to a search engine. The extra review can increase model cost and waiting time. See the [user guide](docs/user-guide.md) for the complete English/Chinese walkthrough.
 
 ## How it works
 

@@ -215,15 +215,23 @@ You may edit `private-settings/settings.env` privately on the host and restart t
 | `DAILY_GENERATION_LIMIT`     | `20`                      | Shared daily cap on plan, question-bank, and classroom generation requests                                                                                   |
 | `MAX_CONCURRENT_GENERATIONS` | `2`                       | Concurrent generation requests for the instance                                                                                                              |
 
-Creating a plan uses one model call; creating its question bank normally uses three more (authoring, blind answer review, and explanation/evidence review). One UI action can therefore consume several model calls; the daily limit is an application request cap, **not a currency budget**. A classroom has at most six scenes and commonly uses two generation requests per scene after its outline. Classroom requests share this allowance, so the default 20 does not mean 20 classrooms. Failed requests also consume the application's daily allowance. Set financial limits in your provider console as well. A review model shares the primary provider's base URL and key; cross-provider review routing is a future feature.
+Creating a plan normally uses one model call. Keyword search may add one focused retrieval round and a second model coverage check, for at most two planning calls. Creating the question bank normally uses three more calls (authoring, blind answer review, and explanation/evidence review). One UI action can therefore consume several model calls; the daily limit is an application request cap, **not a currency budget**. A classroom has at most six scenes and commonly uses two generation requests per scene after its outline. Classroom requests share this allowance, so the default 20 does not mean 20 classrooms. Failed requests also consume the application's daily allowance. Set financial limits in your provider console as well. A review model shares the primary provider's base URL and key; cross-provider review routing is a future feature.
 
-生成大纲使用一次模型调用；生成题库通常再调用三次，分别用于出题、独立解答复核、解析与教学依据复核。课堂最多六个场景，生成大纲后每个场景通常还有两次生成请求，额度与题库共用。每日限制按应用请求计数，默认 20 次不等于 20 门课堂，也不等于金额上限；失败请求也计入应用额度。费用上限需要同时在服务商控制台设置。复核模型与主模型共用服务商、地址和密钥，目前不支持单独跨服务商配置。
+生成大纲通常使用一次模型调用；关键词覆盖不足时，最多增加一轮补查和一次模型核对，大纲阶段合计最多两次。生成题库通常再调用三次，分别用于出题、独立解答复核、解析与教学依据复核。课堂最多六个场景，生成大纲后每个场景通常还有两次生成请求，额度与题库共用。每日限制按应用请求计数，默认 20 次不等于 20 门课堂，也不等于金额上限；失败请求也计入应用额度。费用上限需要同时在服务商控制台设置。复核模型与主模型共用服务商、地址和密钥，目前不支持单独跨服务商配置。
 
 ## Optional search and OpenMAIC / 可选搜索与课堂
 
-- **Search:** default Wikipedia search needs no API key. Long articles retain their introduction and topic-relevant original passages; `[…]` marks omitted passages. You can open the source page to read the complete article. Add your own `BRAVE_SEARCH_API_KEY` to use Brave Search excerpts. This version does not download arbitrary search-result pages; a short excerpt may be insufficient for a reliable course. Upload richer material when asked.
+- **Search:** default Wikipedia search needs no API key. The first round uses the entered topic; the model checks whether the retrieved material supports that topic and learning level. When coverage is insufficient, it can supply up to three concepts or synonyms for one follow-up search, then check the combined evidence again. There is no open-ended search loop or relaxation of the evidence requirement. Pasted/uploaded sources do not trigger this external-search fallback.
 
-默认搜索无需密钥，使用 Wikipedia。长文章会保留导言与主题相关的原文段落，`[…]` 表示中间省略的内容，可打开来源页面查看全文。检索结果仍须通过课程相关性检查；若缺少相应教学内容，请粘贴或上传教材资料。
+默认无需搜索密钥，先按用户主题检索 Wikipedia，再由模型核对主题和学习水平的覆盖情况。覆盖不足时，模型可提出最多三个概念或同义词，自动补查一轮，再核对合并后的资料；不会无限搜索，也不会放宽资料要求。粘贴与上传的材料不触发此自动外搜流程。
+
+Each Wikipedia query makes one search request and fetches up to three article bodies: at most four requests initially and twelve in the follow-up round, with duplicate requests reused within that round. After deduplication, the planning input contains at most eight sources and 36,000 characters in total. Long articles retain their introduction and topic-relevant original passages; `[…]` marks omitted passages. Open the linked source page for the full article.
+
+Wikipedia 每个检索词对应一次搜索及最多三篇正文请求：初搜最多四次，补查最多十二次，同一轮的重复请求会复用。来源去重后最多保留八个来源、合计 36,000 字符。长文章保留导言及与主题相关的原文段落，`[…]` 表示省略部分，可打开来源页查看全文。
+
+Wikipedia is an encyclopedia and may not cover a school chapter, textbook edition, or combined curriculum topic. Add your own `BRAVE_SEARCH_API_KEY` in the local settings form or private configuration to broaden retrieval to web search excerpts; search-provider charges and quotas are separate from model usage. StudyLoop labels these as excerpts and does not download arbitrary result pages, so this is not a guarantee of textbook coverage. If the second check still fails, choose a suggested narrower topic or paste/upload a relevant chapter. The official Smart Education entry and attributed chapter import remain available; this fallback does not log in to or scrape its textbook reader.
+
+Wikipedia 属于百科资料，不保证覆盖学校章节、特定教材版本或组合知识点。可在本机设置表单或私有配置中填写自己的 `BRAVE_SEARCH_API_KEY`，扩展到网页搜索摘要；搜索服务的费用与额度独立于模型。StudyLoop 会标明摘要来源，不会抓取任意结果页面，也不保证由此获得完整教材覆盖。第二次核对仍失败时，可选择建议的细分主题，或粘贴／上传相关章节。现有智慧教育官网入口与带来源的章节导入仍可使用；自动补查不会代登录或抓取其教材阅读器。
 
 - **OpenMAIC:** the real classic classroom is bundled by `npm run build` and starts automatically when first opened. It reuses the saved model configuration; no second key or external classroom address is needed. Create a classroom from a saved StudyLoop attempt and confirm its outline. The classroom library lists lessons saved in this browser. The former `OPENMAIC_URL` variable is retained only for legacy file compatibility and no longer controls navigation. [Classroom and rebuild guide](openmaic.md).
 
@@ -233,29 +241,29 @@ Creating a plan uses one model call; creating its question bank normally uses th
 
 ## Common problems / 常见问题
 
-| Symptom                                                   | Check                                                                                                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Examples work, generation is unavailable                  | Save a model ID and key in the local form, or explicitly enable keyless mode for a local server; manual file edits need a restart                 |
-| Settings are read-only                                    | Open the direct loopback address on the app's host, sign in if required, and avoid a reverse proxy; remote shared access is not management access |
-| The saved key field is blank                              | Saved keys are never read back; blank preserves the existing key for the same service/address, while the clear option removes it                  |
-| Changing the service/address asks for a key               | Enter that endpoint's own key; the old endpoint's key is deliberately not reused                                                                  |
-| Connection test works but generation is still unavailable | Save the tested form; testing unsaved values does not persist them                                                                                |
-| GUI changes disappear after replacing a container         | Configure a writable persistent private settings location, or use host environment configuration and recreate the container                       |
-| Saving fails with a file/permission error                 | Ensure the private configuration's parent directory exists and is writable; use a regular file rather than a symlink                              |
-| 401/403 from a provider                                   | Check your key, account region, API permissions, and selected API product; a consumer chat subscription may not cover API calls                   |
-| 404 or model not found                                    | Verify the base root and model/deployment ID; avoid duplicated `/v1` or API path suffixes                                                         |
-| JSON parsing or review rejection                          | Use a stronger instruction-following model, a smaller course scope, more source material, or a supported JSON mode                                |
-| Timeout                                                   | Reduce the question count; inspect provider availability; increase `LLM_TIMEOUT_MS` only within your hosting limits                               |
-| “Material insufficient”                                   | A timetable or keyword is not teaching evidence; upload relevant explanations or chapter text                                                     |
-| Local model works outside Docker only                     | Use a model-server address reachable from the container                                                                                           |
-| Daily request cap reached                                 | Wait for the server's UTC date reset or intentionally adjust the instance limit; check actual provider usage separately                           |
+| Symptom                                                   | Check                                                                                                                                               |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Examples work, generation is unavailable                  | Save a model ID and key in the local form, or explicitly enable keyless mode for a local server; manual file edits need a restart                   |
+| Settings are read-only                                    | Open the direct loopback address on the app's host, sign in if required, and avoid a reverse proxy; remote shared access is not management access   |
+| The saved key field is blank                              | Saved keys are never read back; blank preserves the existing key for the same service/address, while the clear option removes it                    |
+| Changing the service/address asks for a key               | Enter that endpoint's own key; the old endpoint's key is deliberately not reused                                                                    |
+| Connection test works but generation is still unavailable | Save the tested form; testing unsaved values does not persist them                                                                                  |
+| GUI changes disappear after replacing a container         | Configure a writable persistent private settings location, or use host environment configuration and recreate the container                         |
+| Saving fails with a file/permission error                 | Ensure the private configuration's parent directory exists and is writable; use a regular file rather than a symlink                                |
+| 401/403 from a provider                                   | Check your key, account region, API permissions, and selected API product; a consumer chat subscription may not cover API calls                     |
+| 404 or model not found                                    | Verify the base root and model/deployment ID; avoid duplicated `/v1` or API path suffixes                                                           |
+| JSON parsing or review rejection                          | Use a stronger instruction-following model, a smaller course scope, more source material, or a supported JSON mode                                  |
+| Timeout                                                   | Reduce the question count; inspect provider availability; increase `LLM_TIMEOUT_MS` only within your hosting limits                                 |
+| “Material insufficient”                                   | Keyword search has exhausted its one follow-up round or the supplied material is inadequate; use a suggested narrower topic or provide chapter text |
+| Local model works outside Docker only                     | Use a model-server address reachable from the container                                                                                             |
+| Daily request cap reached                                 | Wait for the server's UTC date reset or intentionally adjust the instance limit; check actual provider usage separately                             |
 
 **MiniMax HTTP 400 with `unknown model` (2013):** check the primary model ID first. An account/Group ID in `LLM_MODEL` is not a model name; replace it with an available ID such as `MiniMax-M3` and check any separate review model too. Keep the correct regional endpoint and its key. Test the corrected configuration, then save it; a test does not save changes. This error alone does not establish that the key is invalid.
 
 **MiniMax 返回 HTTP 400、`unknown model`（2013）：** 先核对“主模型 ID”，把误填的账户编号／Group ID 改为账户可用的模型名称，例如 `MiniMax-M3`；如果单独填写了复核模型，也要检查。确认地址和密钥属于同一区域，测试修正后的配置，再点击保存；测试本身不会保存。仅凭这个错误不能判定密钥失效。
 
-Generation is a synchronous HTTP operation in this alpha, not a durable background job. A slow model's three sequential bank calls can exceed a reverse proxy's request timeout even when each model call is within its own timeout. Check the course library after reconnecting before retrying: the server may have finished after the browser lost its connection. There is no automatic job resume or exactly-once retry guarantee. Start with direct local access and a small bank when diagnosing this.
+Generation is a synchronous HTTP operation in this alpha, not a durable background job. A follow-up source search with two planning calls, or three sequential bank calls on a slow model, can exceed a reverse proxy's request timeout even when each model call is within its own timeout. Check the course library after reconnecting before retrying: the server may have finished after the browser lost its connection. There is no automatic job resume or exactly-once retry guarantee. Start with direct local access and a small bank when diagnosing this.
 
-本版生成使用同步 HTTP 请求，没有可恢复的后台任务。慢模型的三轮题库调用可能超过反向代理的请求时限；断线后先检查课程库再重试，避免服务端已经生成完成却重复消耗额度。可先在本地直连环境用较少题数排查。
+本版生成使用同步 HTTP 请求，没有可恢复的后台任务。补查检索加两次大纲核对，或慢模型的三轮题库调用，都可能超过反向代理的请求时限；断线后先检查课程库再重试，避免服务端已经生成完成却重复消耗额度。可先在本地直连环境用较少题数排查。
 
 Do not paste `.env`, authorization headers, or full student work into a public issue. Report the protocol, redacted base hostname, model ID, error category, and a synthetic reproduction instead.

@@ -597,6 +597,105 @@ textarea:focus-visible {
   color: var(--error);
   border-color: #f2cfd4;
 }
+.error-message > div {
+  min-width: 0;
+}
+.source-recovery {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid #ebcfd3;
+}
+.source-recovery-topic {
+  font-weight: 600;
+}
+.source-recovery-topic > span {
+  margin-right: 10px;
+  font-weight: 400;
+}
+.source-search-rounds,
+.source-search-queries {
+  font-size: 13px;
+}
+.source-search-queries {
+  margin-top: 9px;
+}
+.source-search-queries > summary {
+  cursor: pointer;
+  line-height: 1.8;
+}
+.source-search-queries ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.source-suggestions {
+  margin-top: 13px;
+}
+.source-suggestions > div,
+.source-recovery-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.source-suggestions button,
+.source-recovery-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid #dec8ce;
+  border-radius: 7px;
+  background: white;
+  color: #5b4051;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.source-suggestions button:hover:not(:disabled),
+.source-recovery-actions button:hover:not(:disabled) {
+  background: #fff8fa;
+  border-color: #af8794;
+}
+.source-recovery-actions {
+  margin-top: 15px;
+}
+.source-recovery-actions button {
+  color: var(--accent);
+  border-color: #ccd7f7;
+}
+.source-suggestion-hint {
+  font-size: 13px;
+}
+.source-search-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 13px 14px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: #435d8c;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.source-search-progress > svg {
+  margin-top: 4px;
+}
+.source-search-progress > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.source-search-progress p + p {
+  margin-top: 5px;
+  color: var(--muted);
+}
 .success-message {
   background: #eef3ff;
   color: #3f60b5;

@@ -39,13 +39,13 @@ flowchart TD
 
 ## Course creation and review
 
-1. A course plan is created from a topic plus retrieved or supplied evidence. User-supplied and retrieved text are data, never instructions.
+1. A course plan is created from a topic plus retrieved or supplied evidence. Keyword mode retrieves once and checks coverage against the topic and learning level. Insufficient coverage can trigger one follow-up round using up to three model-suggested concepts or synonyms, followed by a final model check. Pasted/uploaded material never triggers external search. User-supplied and retrieved text, including suggested queries, are data, never instructions.
 2. The server saves the plan to its browser owner. The learner selects a nonempty subset of its objectives and a supported question count.
 3. The model authors a course bank with main questions, explanations, short lessons, separate transfer questions, and source IDs.
 4. A blind answer review solves the main and transfer questions independently; a further review checks explanation/lesson support against the evidence. Disputed output is rejected, not silently published.
 5. Schema validation checks IDs, bounds, answer indexes, unique choices, references, and distinct transfer questions before saving the course.
 
-A normal new course uses one outline call and three bank-related calls (authoring, blind answer review, and explanation/evidence review). The review model can differ from the authoring model while sharing the configured provider. Model reviews remain fallible. A fixed arithmetic solver, a human moderation queue, curriculum certification, and automated repair retries are not currently implemented.
+A normal new course uses one outline call; the bounded keyword-search fallback permits a second planning call. The question bank uses three further calls (authoring, blind answer review, and explanation/evidence review). Wikipedia uses at most four HTTP requests for the initial topic and twelve for the follow-up queries. Deduplicated evidence is capped at eight sources and 36,000 characters. If coverage remains insufficient, no plan is saved; the response can offer narrower topics and material-entry actions. The review model can differ from the authoring model while sharing the configured provider. Model reviews remain fallible. A fixed arithmetic solver, a human moderation queue, curriculum certification, and automatic repair of rejected question banks are not currently implemented.
 
 ## Attempt immutability
 

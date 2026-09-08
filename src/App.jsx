@@ -34,7 +34,12 @@ import {
 import Logo from './Brand.jsx';
 import ModelSettings from './ModelSettings.jsx';
 import TextbookSource, { SourceMetadataFields } from './TextbookSource.jsx';
-import { createApiError, formatApiError, isModelConfigurationError } from './api-errors.js';
+import {
+  createApiError,
+  formatApiError,
+  isModelConfigurationError,
+  isSourceCoverageError,
+} from './api-errors.js';
 import DeleteAttemptDialog, { DELETION_COPY } from './DeleteAttemptDialog.jsx';
 import {
   queueAttemptClassroomCleanup,
@@ -74,6 +79,16 @@ const COPY = {
     en: 'English',
     createPlan: '整理课程大纲',
     planning: '正在整理资料与大纲…',
+    searchPlanning: '正在检索资料…',
+    searchProgress: '正在查找并核对资料，覆盖不足时会自动补查。',
+    searchTopic: '本次主题',
+    sourceRecoveryTitle: '资料还不足以生成这门课',
+    searchRounds: '已完成搜索轮数',
+    searchedQueries: '查看实际检索关键词',
+    suggestedScope: '也可以从其中一个范围开始',
+    suggestionHint: '点击建议只会填入主题，你可以编辑后再整理大纲。',
+    uploadChapter: '上传这一章',
+    pasteCourse: '粘贴课程资料',
     configNotice: '示例课程可以直接练习。配置模型 API 后，就能根据自己的主题或资料生成课程。',
     configure: '配置指南',
     courses: '我的课程',
@@ -263,6 +278,18 @@ const COPY = {
     en: 'English',
     createPlan: 'Build course outline',
     planning: 'Preparing sources and outline…',
+    searchPlanning: 'Searching for sources…',
+    searchProgress:
+      'Searching and checking sources. If coverage is insufficient, the search will expand automatically.',
+    searchTopic: 'Submitted topic',
+    sourceRecoveryTitle: 'More source material is needed',
+    searchRounds: 'Completed search rounds',
+    searchedQueries: 'View the actual search keywords',
+    suggestedScope: 'You can also start with one of these scopes',
+    suggestionHint:
+      'Selecting a suggestion only fills the topic. Edit it if needed, then prepare the outline.',
+    uploadChapter: 'Upload this chapter',
+    pasteCourse: 'Paste course material',
     configNotice:
       'Example courses are ready to practice. Configure a model API to build courses from your own topics and materials.',
     configure: 'Setup guide',
@@ -534,6 +561,9 @@ export default function App() {
   const [courses, setCourses] = useState([]);
   const [attempts, setAttempts] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [planRequest, setPlanRequest] = useState(null);
+  const planRequestRef = useRef(false);
+  const composerBusy = busy || Boolean(planRequest);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -859,31 +889,65 @@ export default function App() {
       setBusy(false);
     }
   };
-  const makePlan = (event) => {
+  const makePlan = async (event) => {
     event.preventDefault();
-    work(async () => {
-      if (topic.trim().length < 2) throw new Error(t.topicRequired);
-      if (mode === 'text' && !material.trim()) throw new Error(t.textRequired);
-      if (mode === 'text' && (material.trim().length < 400 || material.trim().length > 36000))
-        throw new Error(t.materialSize);
-      if (mode === 'upload' && !file) throw new Error(t.fileRequired);
-      if (file?.size > 8 * 1024 * 1024) throw new Error(t.fileTooBig);
-      const body = new FormData();
-      body.set('topic', topic);
-      body.set('level', level);
-      body.set('language', courseLang);
-      body.set('mode', mode);
-      if (mode === 'text') body.set('text', material);
-      if (mode === 'upload') body.set('file', file);
-      if (mode !== 'search') {
-        if (sourceTitle.trim()) body.set('sourceTitle', sourceTitle.trim());
-        if (sourceUrl.trim()) body.set('sourceUrl', sourceUrl.trim());
-      }
-      const data = await api('/api/plans', { method: 'POST', body });
-      setPlan(data.plan);
-      setObjectives(data.plan.objectives);
-      navigate('plan');
-    });
+    if (composerBusy || planRequestRef.current) return;
+    planRequestRef.current = true;
+    const submitted = { topic: topic.trim(), mode };
+    try {
+      await work(async () => {
+        if (topic.trim().length < 2) throw new Error(t.topicRequired);
+        if (mode === 'text' && !material.trim()) throw new Error(t.textRequired);
+        if (mode === 'text' && (material.trim().length < 400 || material.trim().length > 36000))
+          throw new Error(t.materialSize);
+        if (mode === 'upload' && !file) throw new Error(t.fileRequired);
+        if (mode === 'upload' && file?.size > 8 * 1024 * 1024) throw new Error(t.fileTooBig);
+        const body = new FormData();
+        body.set('topic', topic);
+        body.set('level', level);
+        body.set('language', courseLang);
+        body.set('mode', mode);
+        if (mode === 'text') body.set('text', material);
+        if (mode === 'upload') body.set('file', file);
+        if (mode !== 'search') {
+          if (sourceTitle.trim()) body.set('sourceTitle', sourceTitle.trim());
+          if (sourceUrl.trim()) body.set('sourceUrl', sourceUrl.trim());
+        }
+        setPlanRequest(submitted);
+        let data;
+        try {
+          data = await api('/api/plans', { method: 'POST', body });
+        } catch (cause) {
+          cause.planRequest = submitted;
+          if (cause.sourceSearch?.topic !== submitted.topic || submitted.mode !== 'search')
+            delete cause.sourceSearch;
+          throw cause;
+        }
+        setPlan(data.plan);
+        setObjectives(data.plan.objectives);
+        navigate('plan');
+      });
+    } finally {
+      planRequestRef.current = false;
+      setPlanRequest(null);
+    }
+  };
+  const recoverSourceInput = (nextMode, suggestedTopic) => {
+    if (composerBusy) return;
+    if (suggestedTopic) setTopic(suggestedTopic);
+    setMode(nextMode);
+    navigate('home');
+    requestAnimationFrame(() =>
+      document
+        .querySelector(
+          nextMode === 'text'
+            ? '#course-material'
+            : nextMode === 'upload'
+              ? '.upload-trigger'
+              : '#course-topic',
+        )
+        ?.focus(),
+    );
   };
   const makeCourse = () =>
     work(async () => {
@@ -1149,8 +1213,74 @@ export default function App() {
             <div role="alert" className="message error-message">
               <Info size={18} />
               <div>
-                <strong>{t.error}</strong>
+                <strong>
+                  {isSourceCoverageError(error) && error.planRequest?.mode === 'search'
+                    ? t.sourceRecoveryTitle
+                    : t.error}
+                </strong>
                 <p>{formatApiError(error, lang)}</p>
+                {isSourceCoverageError(error) && error.planRequest?.mode === 'search' && (
+                  <div className="source-recovery">
+                    <p className="source-recovery-topic">
+                      <span>{t.searchTopic}</span>
+                      {error.planRequest.topic}
+                    </p>
+                    {error.sourceSearch && (
+                      <>
+                        <p className="source-search-rounds">
+                          {t.searchRounds}：{error.sourceSearch.rounds}
+                        </p>
+                        {error.sourceSearch.queries.length > 0 && (
+                          <details className="source-search-queries">
+                            <summary>{t.searchedQueries}</summary>
+                            <ul>
+                              {error.sourceSearch.queries.map((query) => (
+                                <li key={query}>{query}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                        {error.sourceSearch.suggestedTopics.length > 0 && (
+                          <div className="source-suggestions">
+                            <p>{t.suggestedScope}</p>
+                            <div>
+                              {error.sourceSearch.suggestedTopics.map((suggestion) => (
+                                <button
+                                  type="button"
+                                  key={suggestion}
+                                  onClick={() => recoverSourceInput('search', suggestion)}
+                                  disabled={composerBusy}
+                                >
+                                  {suggestion}
+                                  <ArrowRight size={14} />
+                                </button>
+                              ))}
+                            </div>
+                            <p className="source-suggestion-hint">{t.suggestionHint}</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="source-recovery-actions">
+                      <button
+                        type="button"
+                        onClick={() => recoverSourceInput('upload')}
+                        disabled={composerBusy}
+                      >
+                        <Upload size={15} />
+                        {t.uploadChapter}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => recoverSourceInput('text')}
+                        disabled={composerBusy}
+                      >
+                        <FileText size={15} />
+                        {t.pasteCourse}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {isModelConfigurationError(error) && (
                   <button className="text-button" onClick={() => navigate('settings')}>
                     {t.settings}
@@ -1219,7 +1349,11 @@ export default function App() {
                         <p className="page-subtitle">{t.homeSub}</p>
                       </div>
                     </div>
-                    <form className="course-composer" onSubmit={makePlan}>
+                    <form
+                      className="course-composer"
+                      onSubmit={makePlan}
+                      aria-busy={Boolean(planRequest)}
+                    >
                       <div className="composer-title">
                         <BookOpen size={20} />
                         <h2>{t.newCourse}</h2>
@@ -1238,9 +1372,11 @@ export default function App() {
                           <button
                             type="button"
                             role="tab"
+                            disabled={composerBusy}
                             aria-selected={mode === value}
                             tabIndex={mode === value ? 0 : -1}
                             onKeyDown={(event) => {
+                              if (composerBusy) return;
                               const modes = ['search', 'text', 'upload'];
                               const current = modes.indexOf(mode);
                               const next =
@@ -1282,6 +1418,7 @@ export default function App() {
                           className="topic-input"
                           id="course-topic"
                           value={topic}
+                          disabled={composerBusy}
                           onChange={(event) => setTopic(event.target.value)}
                           placeholder={mode === 'search' ? t.topicPlaceholder : t.materialTitle}
                           required
@@ -1297,6 +1434,7 @@ export default function App() {
                               id="course-material"
                               className="material-input"
                               value={material}
+                              disabled={composerBusy}
                               onChange={(event) => setMaterial(event.target.value)}
                               placeholder={t.materialPlaceholder}
                               rows={5}
@@ -1312,12 +1450,14 @@ export default function App() {
                               ref={fileRef}
                               id="course-file"
                               type="file"
+                              disabled={composerBusy}
                               accept=".pdf,.txt,.md,.markdown,text/plain,application/pdf,text/markdown"
                               onChange={(event) => setFile(event.target.files?.[0] || null)}
                               className="sr-only"
                             />
                             <button
                               type="button"
+                              disabled={composerBusy}
                               onClick={() => fileRef.current?.click()}
                               className="upload-trigger"
                             >
@@ -1343,7 +1483,7 @@ export default function App() {
                             onUrlChange={setSourceUrl}
                             expanded={sourceFieldsOpen}
                             onExpandedChange={setSourceFieldsOpen}
-                            disabled={busy}
+                            disabled={composerBusy}
                           />
                         )}
                         <div className="composer-footer">
@@ -1353,6 +1493,7 @@ export default function App() {
                               <input
                                 aria-label={t.level}
                                 value={level}
+                                disabled={composerBusy}
                                 onChange={(event) => setLevel(event.target.value)}
                                 placeholder={t.levelPlaceholder}
                                 maxLength={100}
@@ -1364,6 +1505,7 @@ export default function App() {
                               <select
                                 aria-label={t.language}
                                 value={courseLang}
+                                disabled={composerBusy}
                                 onChange={(event) => setCourseLang(event.target.value)}
                               >
                                 <option value="zh">中文</option>
@@ -1372,21 +1514,39 @@ export default function App() {
                               <ChevronDown size={12} />
                             </label>
                           </div>
-                          <button className="primary-button" disabled={busy}>
-                            {busy ? (
+                          <button className="primary-button" disabled={composerBusy}>
+                            {composerBusy ? (
                               <LoaderCircle size={17} className="spin" />
                             ) : (
                               <Sparkles size={16} />
                             )}
-                            <span>{busy ? t.planning : t.createPlan}</span>
-                            {!busy && <ArrowRight size={16} />}
+                            <span>
+                              {composerBusy
+                                ? planRequest?.mode === 'search'
+                                  ? t.searchPlanning
+                                  : t.planning
+                                : t.createPlan}
+                            </span>
+                            {!composerBusy && <ArrowRight size={16} />}
                           </button>
                         </div>
+                        {planRequest?.mode === 'search' && (
+                          <div className="source-search-progress" role="status" aria-live="polite">
+                            <Search size={17} />
+                            <div>
+                              <p>{t.searchProgress}</p>
+                              <p>
+                                <span>{t.searchTopic}：</span>
+                                {planRequest.topic}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </form>
                     <TextbookSource
                       lang={lang}
-                      disabled={busy}
+                      disabled={composerBusy}
                       onImport={() => {
                         setMode('upload');
                         setSourceFieldsOpen(true);

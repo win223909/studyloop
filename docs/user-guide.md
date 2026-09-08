@@ -24,15 +24,23 @@ Remote students see a read-only explanation and do not need API keys. A shared i
 
 Your operator must first save a working [model configuration](configuration.md). Choose the course language and a clear level, then select an input method:
 
-| Method                    | Good input                                        | What happens                                                    |
-| ------------------------- | ------------------------------------------------- | --------------------------------------------------------------- |
-| Topic search / 关键词搜索 | “Grade 6 equivalent fractions” / “六年级等值分数” | Retrieves relevant Wikipedia text or configured search excerpts |
-| Upload / 上传             | A text-based PDF, TXT, or Markdown chapter        | Extracts text and uses it as course material                    |
-| Paste text / 粘贴文字     | Your notes or a passage you can use               | Uses that passage directly                                      |
+| Method                    | Good input                                        | What happens                                                                  |
+| ------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Topic search / 关键词搜索 | “Grade 6 equivalent fractions” / “六年级等值分数” | Retrieves sources, checks coverage, and can make one focused follow-up search |
+| Upload / 上传             | A text-based PDF, TXT, or Markdown chapter        | Extracts text and uses it as course material                                  |
+| Paste text / 粘贴文字     | Your notes or a passage you can use               | Uses that passage directly                                                    |
 
 The upload limit is 8 MB; PDFs must have at most 60 pages. Extracted or pasted text should be 400–36,000 characters. Images, scanned PDFs without text, audio, and videos are not parsed in this release. Direct URL ingestion is not implemented; provide the relevant text instead.
 
 上传最大 8 MB，PDF 最多 60 页；文字内容需为 400–36,000 字符。本版不解析纯扫描件、图片、音视频，也没有直接抓取任意网址的入口。扫描件可以先 OCR，再上传可提取文字的 PDF。
+
+Keyword search first retrieves Wikipedia articles, or web excerpts if Brave Search is configured, and asks the model whether they support the requested topic and level. If coverage is insufficient, the model can suggest up to three concept names or synonyms for one automatic follow-up search, followed by one more coverage check. Planning uses at most two model calls, so this path may take longer and cost more. If the evidence still does not support a course, use a clickable narrower-topic suggestion or switch to pasted/uploaded material; StudyLoop does not fill gaps with invented teaching content.
+
+关键词搜索先查找 Wikipedia 正文或已配置的 Brave 网页摘要，再由模型核对是否覆盖所选主题与学习水平。覆盖不足时，模型可给出最多三个概念名称或同义检索词，自动补查一轮并再次核对；大纲阶段最多调用模型两次，可能增加等待时间和费用。仍不满足时，页面会明确提示，并提供可点击的细分主题及粘贴／上传入口，不会编造缺失的教学资料。
+
+Wikipedia is not a textbook catalogue: school chapter names and combined curriculum topics can retrieve unrelated encyclopedia articles. Brave Search can broaden discovery, but short excerpts may still be inadequate. For a specific textbook edition, supply a chapter you are allowed to use. Pasted text and uploaded files are used directly and never trigger automatic external search; model processing still uses your configured provider.
+
+Wikipedia 并非教材目录，教材章节名或组合知识点可能搜到无关词条。配置 Brave Search 可扩大检索范围，但摘要仍不一定足以出题；学习特定版本教材时，建议直接提供有权使用的章节正文。粘贴或上传模式只使用所提供的材料，不会自动发起外部检索；内容处理仍使用已配置的模型服务。
 
 Review the proposed course title, level, sources, and objectives. Select the objectives you want and choose 4, 6, or 8 questions. Generation includes a separate answer/evidence review, so it can take more than one model call. If material is insufficient or the bank fails review, refine the topic or add a fuller explanation before trying again.
 

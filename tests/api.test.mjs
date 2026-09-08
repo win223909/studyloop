@@ -62,6 +62,41 @@ test('safe provider classification reaches the client without upstream response 
   assert.ok(!JSON.stringify(result.json).includes('upstream-private-response'));
 });
 
+test('coverage failures expose only bounded recovery details and do not save a plan', async (t) => {
+  const failure = new CoreError('sources_insufficient', 'More teaching material is needed.');
+  failure.sourceSearch = {
+    topic: '混合运算与数量关系',
+    rounds: 2,
+    queries: ['混合运算与数量关系', '四则运算'],
+    suggestedTopics: ['运算顺序', '方程', '比例', 'extra'],
+    rawResponse: 'private-provider-output',
+  };
+  const { browser } = await instance(t, {
+    core: {
+      providerConfig: () => ({ generationAvailable: true }),
+      createPlan: async () => {
+        throw failure;
+      },
+    },
+  });
+  const request = browser();
+  const result = await request('/api/plans', {
+    topic: failure.sourceSearch.topic,
+    mode: 'search',
+    language: 'zh',
+    level: '小学高年级',
+  });
+  assert.equal(result.status, 422);
+  assert.deepEqual(result.json.sourceSearch, {
+    topic: failure.sourceSearch.topic,
+    rounds: 2,
+    queries: failure.sourceSearch.queries,
+    suggestedTopics: ['运算顺序', '方程', '比例'],
+  });
+  assert.ok(!JSON.stringify(result.json).includes('private-provider-output'));
+  assert.equal((await request('/api/courses')).json.courses.length, 3);
+});
+
 test('material provenance is validated before generation and keyword search cannot override sources', async (t) => {
   const calls = [];
   const { browser } = await instance(t, {

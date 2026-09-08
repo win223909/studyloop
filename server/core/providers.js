@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { validateCourse, validateSource } from './schema.js';
 import { sourceExcerpt } from './source-excerpts.js';
+import {
+  fallbackSearchQueries,
+  mergeSearchSources,
+  normalizeSearchQueries,
+} from './source-search.js';
 
 // Deliberately contain no provider response bodies, request headers, keys, or URLs.
 export class CoreError extends Error {
@@ -463,114 +468,169 @@ export async function searchSources(topic, language = 'en', options = {}) {
   const lang = language === 'zh' ? 'zh' : 'en';
   const cfg = config(options);
   const now = new Date().toISOString();
-  let sources;
-  if (cfg.braveKey) {
-    const url = new URL('https://api.search.brave.com/res/v1/web/search');
-    url.search = new URLSearchParams({
-      q: topic,
-      count: '5',
-      extra_snippets: 'true',
-      search_lang: lang === 'zh' ? 'zh-hans' : 'en',
-      safesearch: 'strict',
-    }).toString();
-    const response = await fetchJson(
-      url.href,
-      { headers: { Accept: 'application/json', 'X-Subscription-Token': cfg.braveKey } },
-      options,
-      'search',
-    );
-    sources = (response.web?.results || []).slice(0, 5).map((item, index) => ({
-      id: `source-${index + 1}`,
-      title: `${cleanExcerpt(item.title).slice(0, 230)} (search excerpts)`,
-      text: [
-        ...new Set(
-          [item.description, ...(Array.isArray(item.extra_snippets) ? item.extra_snippets : [])]
-            .map(cleanExcerpt)
-            .filter(Boolean),
-        ),
-      ]
-        .join('\n')
-        .slice(0, 10000),
-      url: item.url,
-      kind: 'web',
-      retrievedAt: now,
-    }));
-  } else {
-    const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
-    // Encyclopedia search works better with subject terms than connecting particles.
-    // Segment first so characters inside words (such as 目的地) are never removed.
-    const query =
-      lang === 'zh'
-        ? [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(topic)]
-            .map(({ segment }) => (['的', '和', '与', '及'].includes(segment) ? ' ' : segment))
-            .join('')
-            .replace(/\s+/g, ' ')
-            .trim() || topic
-        : topic;
-    const url = new URL(endpoint);
-    url.search = new URLSearchParams({
-      action: 'query',
-      list: 'search',
-      srsearch: query,
-      srnamespace: '0',
-      srlimit: '3',
-      format: 'json',
-      formatversion: '2',
-    }).toString();
-    const headers = {
-      Accept: 'application/json',
-      'User-Agent':
-        'StudyLoop/0.1 (https://github.com/win223909/studyloop; educational source retrieval)',
-    };
-    const response = await fetchJson(url.href, { headers }, options, 'search');
-    // TextExtracts permits only one full article per request. Retrieve ranked page
-    // IDs separately so the first search result is never silently discarded.
-    const hits = (response.query?.search || [])
-      .filter((hit) => Number.isInteger(hit.pageid) && hit.pageid > 0)
-      .slice(0, 3);
-    const fetched = await Promise.allSettled(
-      hits.map(async (hit, index) => {
-        const pageUrl = new URL(endpoint);
-        pageUrl.search = new URLSearchParams({
+  const proposedQueries = normalizeSearchQueries(options.searchQueries);
+  const queries = proposedQueries.length ? proposedQueries : [topic];
+  // Cache parsed responses, not excerpts: one page can support several queries
+  // while each query still selects its own relevant original passages.
+  const requests = new Map();
+  const wikiPages = new Map();
+  const wikiUrlKey = (value) => {
+    try {
+      const url = new URL(value);
+      url.hash = '';
+      return url.href;
+    } catch {
+      return '';
+    }
+  };
+  const requestOnce = (url, init) => {
+    if (!requests.has(url)) requests.set(url, fetchJson(url, init, options, 'search'));
+    return requests.get(url);
+  };
+  const groups = await Promise.allSettled(
+    queries.map(async (queryTopic) => {
+      let sources;
+      if (cfg.braveKey) {
+        const url = new URL('https://api.search.brave.com/res/v1/web/search');
+        url.search = new URLSearchParams({
+          q: queryTopic,
+          count: '5',
+          extra_snippets: 'true',
+          search_lang: lang === 'zh' ? 'zh-hans' : 'en',
+          safesearch: 'strict',
+        }).toString();
+        const response = await requestOnce(url.href, {
+          headers: { Accept: 'application/json', 'X-Subscription-Token': cfg.braveKey },
+        });
+        sources = (Array.isArray(response.web?.results) ? response.web.results : [])
+          .slice(0, 5)
+          .filter((item) => item && typeof item === 'object')
+          .map((item, index) => ({
+            id: `source-${index + 1}`,
+            title: `${cleanExcerpt(item.title).slice(0, 230)} (search excerpts)`,
+            text: [
+              ...new Set(
+                [
+                  item.description,
+                  ...(Array.isArray(item.extra_snippets) ? item.extra_snippets : []),
+                ]
+                  .map(cleanExcerpt)
+                  .filter(Boolean),
+              ),
+            ]
+              .join('\n')
+              .slice(0, 10000),
+            url: item.url,
+            kind: 'web',
+            retrievedAt: now,
+          }));
+      } else {
+        const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
+        // Encyclopedia search works better with subject terms than connecting particles.
+        // Segment first so characters inside words (such as 目的地) are never removed.
+        const query =
+          lang === 'zh'
+            ? [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(queryTopic)]
+                .map(({ segment }) => (['的', '和', '与', '及'].includes(segment) ? ' ' : segment))
+                .join('')
+                .replace(/\s+/g, ' ')
+                .trim() || queryTopic
+            : queryTopic;
+        const url = new URL(endpoint);
+        url.search = new URLSearchParams({
           action: 'query',
-          pageids: String(hit.pageid),
-          prop: 'extracts|info|pageprops',
-          ppprop: 'disambiguation',
-          explaintext: '1',
-          inprop: 'url',
+          list: 'search',
+          srsearch: query,
+          srnamespace: '0',
+          srlimit: '3',
           format: 'json',
           formatversion: '2',
         }).toString();
-        const pageResponse = await fetchJson(pageUrl.href, { headers }, options, 'search');
-        const page = pageResponse.query?.pages?.[0];
-        if (!page?.extract || Object.hasOwn(page.pageprops || {}, 'disambiguation')) return null;
-        return {
-          id: `source-${index + 1}`,
-          title: String(page.title || '').slice(0, 290),
-          text: sourceExcerpt(page.extract, 10000, topic),
-          url:
-            page.fullurl || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
-          kind: 'web',
-          license: 'Wikipedia text: CC BY-SA 4.0; see source page for attribution and notices',
-          retrievedAt: now,
+        const headers = {
+          Accept: 'application/json',
+          'User-Agent':
+            'StudyLoop/0.1 (https://github.com/win223909/studyloop; educational source retrieval)',
         };
-      }),
-    );
-    sources = fetched
-      .filter((result) => result.status === 'fulfilled' && result.value)
-      .map((result) => result.value);
-    if (!sources.length && fetched.some((result) => result.status === 'rejected'))
-      throw fetched.find((result) => result.status === 'rejected').reason;
-  }
-  const usable = sources
-    .filter((source) => source.text.length >= 150)
-    .flatMap((source) => {
-      try {
-        return [validateSource(source)];
-      } catch {
-        return [];
+        const response = await requestOnce(url.href, { headers });
+        // TextExtracts permits only one full article per request. Retrieve ranked page
+        // IDs separately so the first search result is never silently discarded.
+        const hits = (Array.isArray(response.query?.search) ? response.query.search : [])
+          .filter((hit) => Number.isInteger(hit?.pageid) && hit.pageid > 0)
+          .slice(0, 3);
+        const fetched = await Promise.allSettled(
+          hits.map(async (hit, index) => {
+            const pageUrl = new URL(endpoint);
+            pageUrl.search = new URLSearchParams({
+              action: 'query',
+              pageids: String(hit.pageid),
+              prop: 'extracts|info|pageprops',
+              ppprop: 'disambiguation',
+              explaintext: '1',
+              inprop: 'url',
+              format: 'json',
+              formatversion: '2',
+            }).toString();
+            const pageResponse = await requestOnce(pageUrl.href, { headers });
+            const page = pageResponse.query?.pages?.[0];
+            if (!page?.extract || Object.hasOwn(page.pageprops || {}, 'disambiguation'))
+              return null;
+            const sourceUrl =
+              page.fullurl ||
+              `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title)}`;
+            const key = wikiUrlKey(sourceUrl);
+            if (key) {
+              const cached = wikiPages.get(key) || { extract: page.extract, queries: new Set() };
+              cached.queries.add(queryTopic);
+              wikiPages.set(key, cached);
+            }
+            return {
+              id: `source-${index + 1}`,
+              title: String(page.title || '').slice(0, 290),
+              text: sourceExcerpt(page.extract, 10000, queryTopic),
+              url: sourceUrl,
+              kind: 'web',
+              license: 'Wikipedia text: CC BY-SA 4.0; see source page for attribution and notices',
+              retrievedAt: now,
+            };
+          }),
+        );
+        sources = fetched
+          .filter((result) => result.status === 'fulfilled' && result.value)
+          .map((result) => result.value);
+        if (!sources.length && fetched.some((result) => result.status === 'rejected'))
+          throw fetched.find((result) => result.status === 'rejected').reason;
       }
-    });
+      return sources;
+    }),
+  );
+  const successful = groups
+    .filter((group) => group.status === 'fulfilled')
+    .map((group) => group.value);
+  const excerptFor = (source, limit = 10000) => {
+    if (cfg.braveKey) return source;
+    const page = wikiPages.get(wikiUrlKey(source.url));
+    if (!page) return source;
+    // A shared article must support every query that found it. Re-select from
+    // its cached original text rather than discard later excerpts or paste
+    // overlapping passages together. Keep query order independent of timing.
+    const context = queries.filter((query) => page.queries.has(query)).join(' ');
+    return { ...source, text: sourceExcerpt(page.extract, limit, context) };
+  };
+  const ranked = [];
+  const ranks = Math.max(0, ...successful.map((group) => group.length));
+  for (let rank = 0; rank < ranks; rank++)
+    for (const group of successful) if (group[rank]) ranked.push(excerptFor(group[rank]));
+  // Interleave query ranks before allocating the shared budget: three long
+  // hits for one query must not starve another concept's first relevant hit.
+  // The general merge helper still keeps caller-supplied group priority.
+  const usable = mergeSearchSources([ranked], topic)
+    // If the overall budget shortened an article, use the same combined
+    // context at its allocated length. This cannot increase the total budget.
+    .map((source) => excerptFor(source, source.text.length))
+    .filter((source) => source.text.length >= 150)
+    .map((source, index) => ({ ...source, id: `source-${index + 1}` }));
+  const failed = groups.find((group) => group.status === 'rejected');
+  if (!usable.length && failed) throw failed.reason;
   if (!usable.length)
     throw error(
       'sources_missing',
@@ -611,6 +671,38 @@ function safeText(value, max = 250) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 }
 
+const PLAN_INSTRUCTION = `Plan a short introductory course matching the ENTIRE requested topic and level, based strictly on the provided source material. Do not invent missing facts or silently narrow the topic. Interpret broad terms in the curriculum context of the learner's level; never substitute an advanced technical meaning just because a source exists. In elementary mathematics, teach concrete arithmetic and everyday quantities, not function notation, vectors or abstract algebra. Definitions of arithmetic operations can support original everyday word problems and quantity relationships through normal reasoning; a source need not use the exact curriculum chapter title. Assess whether sources contain instructional facts relevant to this interpretation, not just a schedule, table of contents, prompt, or link list. Normal reasoning, worked examples, and calculations from sourced rules are allowed. Return {"sufficient":boolean,"title":string,"description":string,"subject":string,"objectives":string[],"relevantSourceIds":string[]}. Set sufficient=false if the material cannot support ALL requested concepts at the requested level. When sufficient=true, give 3–6 concrete learning objectives supported by the sources, in the requested language. Use learner-friendly goals rather than copied encyclopedia prose. The title is at most 200 characters, description at most 2000, subject at most 100, each objective at most 250. relevantSourceIds lists only supplied sources with useful instructional facts that support the planned objectives; use [] if none. Ignore unrelated or overly advanced articles even if they are long.
+When sufficient=false, also return {"searchQueries":string[]}. Propose at most 3 short search keywords for the missing foundational concepts, using canonical subject terms or synonyms likely to have encyclopedia articles in the requested language. Split compound topics into their underlying concepts; choose terms appropriate to the learner's level, without adding generic grade labels or repeating a failed query. These are retrieval hints, NOT evidence: never invent source text, links, or citations. If no sources are supplied, sufficient must be false and you should still propose search keywords.`;
+
+function isCoverageError(failure) {
+  return (
+    failure instanceof CoreError &&
+    ['sources_missing', 'sources_insufficient'].includes(failure.code)
+  );
+}
+
+function coverageFailure(topic, rounds, queries, suggestions) {
+  const failure = error(
+    'sources_insufficient',
+    'The sources do not provide enough relevant teaching content. Add lesson notes or a textbook excerpt rather than only a course schedule.',
+  );
+  // Explicit, bounded retrieval metadata only; never serialize model responses.
+  failure.sourceSearch = {
+    topic,
+    rounds,
+    queries: queries.slice(0, 4),
+    suggestedTopics: normalizeSearchQueries(suggestions, { exclude: topic }),
+  };
+  return failure;
+}
+
+function relevantPlanSources(proposed, sources, required = false) {
+  // Refusals from older/custom models may omit the useful subset. A successful
+  // automatic search must identify real evidence before a plan can be accepted.
+  if (!Array.isArray(proposed.relevantSourceIds)) return required ? [] : sources;
+  return sources.filter((source) => proposed.relevantSourceIds.includes(source.id));
+}
+
 export async function createPlan(input, options = {}) {
   if (!config(options).available)
     throw error(
@@ -627,10 +719,20 @@ export async function createPlan(input, options = {}) {
   const level = input.level || (language === 'zh' ? '入门' : 'Beginner');
   if (!safeText(level, 100))
     throw error('invalid_level', 'Enter a learning level up to 100 characters.');
+  const automaticSearch = input.mode === 'search' && !input.sources;
+  let searchRounds = 0;
+  const searchedQueries = [input.topic.trim()];
   let sources = input.sources;
   if (!sources) {
-    if (input.mode === 'search') sources = await searchSources(input.topic, language, options);
-    else
+    if (automaticSearch) {
+      try {
+        sources = await searchSources(input.topic, language, options);
+      } catch (failure) {
+        if (!isCoverageError(failure)) throw failure;
+        sources = [];
+      }
+      searchRounds = 1;
+    } else
       sources = [
         {
           id: 'source-1',
@@ -641,12 +743,84 @@ export async function createPlan(input, options = {}) {
         },
       ];
   }
-  sources = sufficientSources(sources);
-  const proposed = await modelJson(
-    `Plan a short introductory course matching the requested topic and level, based strictly on the provided source material. Do not invent missing facts. Assess whether these sources actually contain instructional facts relevant to the topic, not just a schedule, table of contents, prompt, or link list. Return {"sufficient":boolean,"title":string,"description":string,"subject":string,"objectives":string[]}. Set sufficient=false if material is irrelevant or too thin. When sufficient=true, give 3–6 concrete learning objectives supported by the sources, in the requested language. The title is at most 200 characters, description at most 2000, subject at most 100, each objective at most 250.`,
-    { topic: input.topic, level, language, sources },
+  let enoughText = false;
+  try {
+    sources = sufficientSources(sources);
+    enoughText = true;
+  } catch (failure) {
+    if (!automaticSearch || !isCoverageError(failure)) throw failure;
+  }
+  let proposed = await modelJson(
+    PLAN_INSTRUCTION,
+    {
+      topic: input.topic,
+      level,
+      language,
+      sources,
+      searchedQueries: automaticSearch ? searchedQueries : [],
+    },
     options,
   );
+  if (automaticSearch && proposed.sufficient === true) {
+    sources = relevantPlanSources(proposed, sources, true);
+    try {
+      sources = sufficientSources(sources);
+    } catch (failure) {
+      if (!isCoverageError(failure)) throw failure;
+      enoughText = false;
+    }
+  }
+  if (automaticSearch && (!enoughText || proposed.sufficient !== true)) {
+    const additionalQueries = normalizeSearchQueries(
+      [
+        ...(Array.isArray(proposed.searchQueries) ? proposed.searchQueries : []),
+        ...fallbackSearchQueries(input.topic),
+      ],
+      { exclude: searchedQueries },
+    );
+    if (additionalQueries.length) {
+      let supplemental = [];
+      try {
+        supplemental = await searchSources(input.topic, language, {
+          ...options,
+          searchQueries: additionalQueries,
+        });
+      } catch (failure) {
+        if (!isCoverageError(failure)) throw failure;
+      }
+      searchRounds += 1;
+      searchedQueries.push(...additionalQueries);
+      const retained = relevantPlanSources(proposed, sources);
+      sources = mergeSearchSources([supplemental, retained], input.topic);
+      try {
+        sources = sufficientSources(sources);
+      } catch (failure) {
+        if (!isCoverageError(failure)) throw failure;
+        throw coverageFailure(input.topic, searchRounds, searchedQueries, additionalQueries);
+      }
+      proposed = await modelJson(
+        PLAN_INSTRUCTION,
+        { topic: input.topic, level, language, sources, searchedQueries },
+        options,
+      );
+      enoughText = true;
+      if (proposed.sufficient === true) {
+        sources = relevantPlanSources(proposed, sources, true);
+        try {
+          sources = sufficientSources(sources);
+        } catch (failure) {
+          if (!isCoverageError(failure)) throw failure;
+          enoughText = false;
+        }
+      }
+    }
+    if (!enoughText || proposed.sufficient !== true)
+      throw coverageFailure(input.topic, searchRounds, searchedQueries, [
+        ...(Array.isArray(proposed.searchQueries) ? proposed.searchQueries : []),
+        ...additionalQueries,
+        ...fallbackSearchQueries(input.topic),
+      ]);
+  }
   if (proposed.sufficient !== true)
     throw error(
       'sources_insufficient',

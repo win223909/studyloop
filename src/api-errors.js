@@ -1,8 +1,9 @@
 const MESSAGES = {
   zh: {
     sources_insufficient:
-      '找到的资料未能充分覆盖这门课的主题。请尝试更具体的关键词，或粘贴、上传与课程相关的教材资料后重试。',
-    sources_missing: '没有找到可用于这门课的资料。请更换关键词，或粘贴、上传课程资料后重试。',
+      '找到的资料仍不足以支持完整课程，本次未生成大纲。可以选择更聚焦的关键词范围，或粘贴、上传相关章节继续。',
+    sources_missing:
+      '尚未找到可用于这门课的资料，本次未生成大纲。可以选择更聚焦的关键词范围，或粘贴、上传课程资料继续。',
     bank_invalid:
       '生成的题库未通过结构或引用校验，本次题库未保存。请重试，也可减少题目数量，或换用更清晰、完整的课程资料。',
     plan_invalid:
@@ -52,9 +53,9 @@ const MESSAGES = {
   },
   en: {
     sources_insufficient:
-      'The sources do not sufficiently cover this course topic. Try more specific keywords, or paste or upload relevant course material.',
+      'The sources still do not support the full course, so no outline was created. Choose a focused scope using keywords, or paste or upload a relevant chapter to continue.',
     sources_missing:
-      'No usable sources were found for this course. Try different keywords, or paste or upload course material.',
+      'No usable sources were found, so no outline was created. Choose a focused scope using keywords, or paste or upload course material to continue.',
     bank_invalid:
       'The generated question bank did not pass structure or citation validation and was not saved. Retry, use fewer questions or provide clearer, more complete course material.',
     plan_invalid:
@@ -116,6 +117,50 @@ const MESSAGES = {
   },
 };
 
+export function isSourceCoverageError(error) {
+  return ['sources_missing', 'sources_insufficient'].includes(error?.code);
+}
+
+export function normalizeSourceSearch(value) {
+  const plainText = (text, max) =>
+    typeof text === 'string' &&
+    text.trim().length >= 2 &&
+    text.length <= max &&
+    !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(text) &&
+    !/<\/?[a-z!][^>]*>/iu.test(text);
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !plainText(value.topic, 200) ||
+    ![1, 2].includes(value.rounds) ||
+    !Array.isArray(value.queries) ||
+    value.queries.length > 4 ||
+    !Array.isArray(value.suggestedTopics) ||
+    value.suggestedTopics.length > 3
+  )
+    return undefined;
+  const keywords = (items, max) => [
+    ...new Set(
+      items
+        .filter(
+          (item) =>
+            plainText(item, max) &&
+            !/[<>]/u.test(item) &&
+            !/(?:\b[a-z][a-z\d+.-]*:\/\/|\b(?:data|javascript|file):|(?:^|\s)(?:www\.|\/\/))/iu.test(
+              item,
+            ),
+        )
+        .map((item) => item.trim().replace(/\s+/gu, ' ')),
+    ),
+  ];
+  return {
+    topic: value.topic.trim(),
+    rounds: value.rounds,
+    queries: keywords(value.queries, 200),
+    suggestedTopics: keywords(value.suggestedTopics, 120),
+  };
+}
+
 export function createApiError(result, status) {
   const code = typeof result?.code === 'string' ? result.code : result?.error?.code;
   const providerError = typeof code === 'string' && code.toLowerCase().startsWith('provider_');
@@ -130,6 +175,10 @@ export function createApiError(result, status) {
   );
   error.code = typeof code === 'string' ? code.toLowerCase() : undefined;
   error.status = status;
+  if (isSourceCoverageError(error)) {
+    const sourceSearch = normalizeSourceSearch(result?.sourceSearch);
+    if (sourceSearch) error.sourceSearch = sourceSearch;
+  }
   return error;
 }
 

@@ -900,7 +900,38 @@ export async function createApp(options = {}) {
             ? 422
             : 502,
         )
-        .json({ error: error.publicMessage, code: error.code });
+        .json({
+          error: error.publicMessage,
+          code: error.code,
+          ...(['sources_missing', 'sources_insufficient'].includes(error.code) &&
+          error.sourceSearch &&
+          typeof error.sourceSearch.topic === 'string' &&
+          error.sourceSearch.topic.length <= 300 &&
+          [1, 2].includes(error.sourceSearch.rounds)
+            ? {
+                sourceSearch: {
+                  topic: error.sourceSearch.topic,
+                  rounds: error.sourceSearch.rounds,
+                  queries: Array.isArray(error.sourceSearch.queries)
+                    ? error.sourceSearch.queries
+                        .filter((value) => typeof value === 'string' && value.length <= 300)
+                        .slice(0, 4)
+                    : [],
+                  suggestedTopics: Array.isArray(error.sourceSearch.suggestedTopics)
+                    ? error.sourceSearch.suggestedTopics
+                        .filter(
+                          (value) =>
+                            typeof value === 'string' &&
+                            value.length >= 2 &&
+                            value.length <= 120 &&
+                            !/[\r\n\u0000-\u001f]/u.test(value),
+                        )
+                        .slice(0, 3)
+                    : [],
+                },
+              }
+            : {}),
+        });
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
     if (error instanceof multer.MulterError)
       return res.status(400).json({ error: 'Upload limit exceeded. Maximum file size: 8 MB.' });
