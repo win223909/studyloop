@@ -196,3 +196,14 @@ export function cleanBuildEnvironment(env = process.env) {
     NEXT_PUBLIC_PI_CHAT_ENABLED: '',
   };
 }
+
+// Upstream lifecycle scripts call `pnpm` directly. Corepack can invoke pnpm
+// without installing a global shim, so provide a build-local command on PATH.
+export async function createPnpmShim(directory) {
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, 'pnpm'), '#!/bin/sh\nexec corepack pnpm "$@"\n', {
+    mode: 0o755,
+  });
+  await writeFile(path.join(directory, 'pnpm.cmd'), '@echo off\r\ncorepack pnpm %*\r\n');
+  return directory;
+}

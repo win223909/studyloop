@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   cleanBuildEnvironment,
+  createPnpmShim,
   directoryFiles,
   extractSourceArchive,
   filesHash,
@@ -28,6 +30,26 @@ function member(name, body = '', type = '0') {
 }
 const archive = (...members) => gzipSync(Buffer.concat([...members, Buffer.alloc(1024)]));
 const parse = (data) => readSourceArchive(data, sha256(data));
+
+test('lifecycle scripts can invoke pnpm without a global package-manager shim', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'studyloop shim '));
+  try {
+    const bin = await createPnpmShim(path.join(directory, 'commands'));
+    assert.match(await readFile(path.join(bin, 'pnpm.cmd'), 'utf8'), /corepack pnpm %\*/);
+    if (process.platform === 'win32') return;
+    await writeFile(path.join(directory, 'corepack'), '#!/bin/sh\nprintf "%s\\n" "$@"\n', {
+      mode: 0o755,
+    });
+    const result = spawnSync('pnpm', ['--version'], {
+      env: { PATH: bin + path.delimiter + directory },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'pnpm\n--version\n');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('verified source archive extracts nested files into an empty directory', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'studyloop-source-'));

@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   cleanBuildEnvironment,
+  createPnpmShim,
   directoryFiles,
   extractSourceArchive,
   filesHash,
@@ -159,7 +160,10 @@ export async function buildOpenMAIC({ force = false } = {}) {
       moved.push({ from, to });
     }
     const env = cleanBuildEnvironment();
-    env.PATH = `${path.dirname(process.execPath)}${path.delimiter}${env.PATH || ''}`;
+    const commandDirectory = await createPnpmShim(path.join(stage, '.studyloop-bin'));
+    env.PATH = [commandDirectory, path.dirname(process.execPath), env.PATH || ''].join(
+      path.delimiter,
+    );
     const sourcePackage = await readJson(path.join(stage, 'package.json'));
     if (!sourcePackage?.packageManager?.startsWith(`pnpm@${pnpmVersion}+`))
       throw new Error('OpenMAIC package-manager pin changed; review the build toolchain.');
