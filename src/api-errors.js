@@ -45,7 +45,7 @@ const MESSAGES = {
     provider_context_limit:
       '请求内容或输出 Token 上限超出当前模型的限制。请减少资料长度，或在高级模型参数中调低最大输出 Token 上限；也可换用支持更高限制的模型。',
     provider_content_filter:
-      '模型服务因内容限制拒绝了请求。请检查课程主题和资料是否符合服务商的使用规则。',
+      '模型服务的内容检查拒绝了本次课程资料。检索资料可能与课程无关，请核对资料来源，或上传相关章节继续。此类拒绝不会自动重试。',
     provider_http: '模型服务暂时无法完成请求。请稍后重试，或在「模型与设置」测试连接。',
     generation_unconfigured:
       '尚未配置课程生成模型。请到「模型与设置」填写服务商、主模型 ID 和 API 密钥；示例课程仍可使用。',
@@ -112,7 +112,7 @@ const MESSAGES = {
     provider_context_limit:
       'The request content or output-token limit exceeds this model’s limits. Use shorter material, lower Maximum output tokens in advanced model parameters, or choose a model with higher limits.',
     provider_content_filter:
-      'The model service declined the request due to content restrictions. Check that the course topic and material follow the provider’s usage rules.',
+      'The provider’s content check declined this course material. Retrieved sources may be unrelated to the course. Check the sources or upload a relevant chapter to continue. This refusal is not retried automatically.',
     provider_http:
       'The model service could not complete this request. Retry later or test the connection in Models & settings.',
     generation_unconfigured:

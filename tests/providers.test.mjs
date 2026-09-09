@@ -527,7 +527,14 @@ test('Wikipedia preserves search ranking and fetches each full extract separatel
             {
               pageid: Number(pageid),
               title: pageid === '10' ? 'Fraction' : 'Rational number',
-              extract: sourceCourse.sources[0].text,
+              extract:
+                pageid === '10'
+                  ? 'A fraction represents part of a whole using a numerator and denominator. '.repeat(
+                      8,
+                    )
+                  : 'A rational number can be written as a fraction of two integers with a nonzero denominator. '.repeat(
+                      8,
+                    ),
               fullurl: `https://en.wikipedia.org/wiki/${pageid}`,
             },
           ],
@@ -549,10 +556,10 @@ test('Wikipedia preserves search ranking and fetches each full extract separatel
 });
 
 test('Chinese encyclopedia queries separate connecting particles without corrupting subject terms', async () => {
-  for (const [topic, expected] of [
-    ['小数的除法', '小数 除法'],
-    ['C++的入门', 'C++ 入门'],
-    ['目的地', '目的地'],
+  for (const [topic, expected, explanation] of [
+    ['小数的除法', '小数 除法', '小数的除法可以把被除数和除数扩大相同的倍数，再按整数除法计算。'],
+    ['C++的入门', 'c++', 'C++ 是一种编程语言，入门内容包括变量、数据类型、条件判断、循环和函数。'],
+    ['目的地', '目的地', '目的地是一次旅行或运输计划最终抵达的地方，可以用地址或地理坐标表示。'],
   ]) {
     const sources = await searchSources(topic, 'zh', {
       env: {},
@@ -568,7 +575,7 @@ test('Chinese encyclopedia queries separate connecting particles without corrupt
               {
                 pageid: 10,
                 title: topic,
-                extract: sourceCourse.sources[0].text,
+                extract: explanation.repeat(10),
                 fullurl: 'https://zh.wikipedia.org/wiki/10',
               },
             ],

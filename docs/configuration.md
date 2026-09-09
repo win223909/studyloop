@@ -254,13 +254,13 @@ A normal bank uses three calls. Its two reviews may each retry a JSON-format err
 
 ## Optional search and OpenMAIC / 可选搜索与课堂
 
-- **Search:** default Wikipedia search needs no API key. The first round uses the entered topic; the model checks whether the retrieved material supports that topic and learning level. When coverage is insufficient, it can supply up to three concepts or synonyms for one follow-up search, then check the combined evidence again. There is no open-ended search loop or relaxation of the evidence requirement. Pasted/uploaded sources do not trigger this external-search fallback.
+- **Search:** default Wikipedia search needs no API key. The first round keeps a short subject query or extracts explicit concepts from an exercise-style prompt, using at most three queries. Candidate titles, summaries, and short introductions are screened for subject relevance before their material reaches the model. The model still checks coverage against the complete original topic and learning level. When coverage is insufficient, it can supply up to three concepts or synonyms for one follow-up search, then check the combined evidence again. There is no open-ended search loop or relaxation of the evidence requirement. Pasted/uploaded sources do not trigger this external-search fallback.
 
-默认无需搜索密钥，先按用户主题检索 Wikipedia，再由模型核对主题和学习水平的覆盖情况。覆盖不足时，模型可提出最多三个概念或同义词，自动补查一轮，再核对合并后的资料；不会无限搜索，也不会放宽资料要求。粘贴与上传的材料不触发此自动外搜流程。
+默认无需搜索密钥。初搜保留简短主题的原查询，或从题型长句提取明确知识点，最多使用三个检索词；先根据候选标题、摘要和短导语预筛学科相关性，再将资料交给模型。模型仍核对完整原主题和学习水平的覆盖情况。覆盖不足时，模型可提出最多三个概念或同义词，自动补查一轮，再核对合并后的资料；不会无限搜索，也不会放宽资料要求。粘贴与上传的材料不触发此自动外搜流程。
 
-Each Wikipedia query makes one search request and fetches up to three article bodies: at most four requests initially and twelve in the follow-up round, with duplicate requests reused within that round. After deduplication, the planning input contains at most eight sources and 36,000 characters in total. Long articles retain their introduction and topic-relevant original passages; `[…]` marks omitted passages. Open the linked source page for the full article.
+Each Wikipedia query makes one search request and fetches up to three article bodies: at most twelve HTTP requests in either round, or four for an initial topic kept as a single query. Duplicate requests are reused within that round. After deduplication, the planning input contains at most eight sources and 36,000 characters in total. Long articles retain their introduction and topic-relevant original passages; `[…]` marks omitted passages. Open the linked source page for the full article.
 
-Wikipedia 每个检索词对应一次搜索及最多三篇正文请求：初搜最多四次，补查最多十二次，同一轮的重复请求会复用。来源去重后最多保留八个来源、合计 36,000 字符。长文章保留导言及与主题相关的原文段落，`[…]` 表示省略部分，可打开来源页查看全文。
+Wikipedia 每个检索词对应一次搜索及最多三篇正文请求：初搜和补查每轮最多十二次 HTTP 请求，初搜保留为单一检索词时最多四次。同一轮的重复请求会复用。来源去重后最多保留八个来源、合计 36,000 字符。长文章保留导言及与主题相关的原文段落，`[…]` 表示省略部分，可打开来源页查看全文。
 
 Wikipedia is an encyclopedia and may not cover a school chapter, textbook edition, or combined curriculum topic. Add your own `BRAVE_SEARCH_API_KEY` in the local settings form or private configuration to broaden retrieval to web search excerpts; search-provider charges and quotas are separate from model usage. StudyLoop labels these as excerpts and does not download arbitrary result pages, so this is not a guarantee of textbook coverage. If the second check still fails, choose a suggested narrower topic or paste/upload a relevant chapter. The official Smart Education entry and attributed chapter import remain available; this fallback does not log in to or scrape its textbook reader.
 

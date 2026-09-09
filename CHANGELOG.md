@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased — 2026-09-08
+## Unreleased — 2026-09-09
 
+- Extract explicit concepts from exercise-style search prompts and screen candidate titles, summaries, and short introductions for relevance; retain the full original topic for model coverage checks and preserve evidence requirements.
+- Classify MiniMax HTTP 422 `input/output new_sensitive` (1026/1027) as a provider content-check refusal rather than a parameter error, without automatically retrying the refusal.
+- Strengthen authoring and blind-review instructions to check every option, reject equivalent true distractors, and explain actual errors.
 - Recover malformed or truncated model output within bounded stage retries and small authoring batches; preserve strict source, answer and explanation checks and never save partial banks.
 - Adapt official MiniMax-M3 authoring and embedded scene generation to avoid exhausting the output budget on reasoning; retry a failed M3 review once without repeating authoring.
 - Make interrupted submissions replay their original saved result, prevent duplicate work on repeated clicks, and show safe failure stages and request identifiers.

@@ -49,7 +49,7 @@ function rig(outputs, { emptyInitial = false, small = false, failSearch = false 
         pages: [
           {
             pageid,
-            title: pageid === 1 ? '中央处理器' : `数学概念${pageid}`,
+            title: pageid === 1 ? '混合运算与数量关系基础' : calls.queries[pageid - 1],
             extract: small ? text.slice(0, 180) : text,
             fullurl: `https://zh.wikipedia.org/wiki/fixture-${pageid}`,
           },
@@ -80,7 +80,7 @@ test('insufficient compound topic gets one supplemental round and is reassessed 
     assert.equal(request.topic, input.topic);
     assert.equal(request.level, input.level);
   }
-  assert.ok(plan.sources.every((source) => source.title !== '中央处理器'));
+  assert.ok(plan.sources.every((source) => source.title !== '混合运算与数量关系基础'));
   assert.equal(plan.sources.length, 3);
   assert.deepEqual(
     plan.sources.map((source) => source.id),
@@ -121,7 +121,7 @@ test('successful plans retain only selected, supplied teaching evidence', async 
   assert.equal(calls.inputs.length, 2);
   assert.equal(plan.sources.length, 1);
   assert.equal(plan.sources[0].id, 'source-1');
-  assert.equal(plan.sources[0].title, '数学概念2');
+  assert.equal(plan.sources[0].title, '四则运算');
 });
 
 test('invented or empty source selections cannot turn recovery into a successful plan', async () => {
@@ -219,4 +219,85 @@ test('search and provider outages are not retried as content coverage failures',
   );
   assert.equal(provider.calls.inputs.length, 1);
   assert.equal(provider.calls.queries.length, 1);
+});
+
+test('percentage word problems send relevant evidence and the complete original goal to the outline model', async () => {
+  const topic = '求一个数比另一个多（少）百分之几的实际问题练习';
+  const percentageText =
+    '百分比表示一个量相对于另一个量的百分之几。求一个数比另一个数多百分之几，先求两个数的差，再除以作为比较标准的数，最后乘以百分之百。求少百分之几时仍要先确定比较的标准量。例如六十比五十多百分之二十，五十比六十少约百分之十六点七；因为标准量不同，两个百分比不相同。'.repeat(
+      4,
+    );
+  const unrelatedMarker = 'UNRELATED_LONG_ARTICLE_MUST_NOT_REACH_MODEL';
+  const unrelatedText =
+    '这篇文章介绍历史人物的生平、任职经历和社会事件，与数学课程没有关系。'.repeat(200) +
+    ` ${unrelatedMarker} 百分之几的变化只是文章末尾的一处统计。`;
+  const pages = [
+    { pageid: 10, title: '百分比', extract: percentageText },
+    { pageid: 20, title: '白紙運動', extract: unrelatedText },
+    { pageid: 30, title: '蔣經國', extract: unrelatedText },
+  ];
+  const queries = [];
+  const modelInputs = [];
+  const plan = await createPlan(
+    { ...input, topic },
+    {
+      env,
+      fetch: async (address, init) => {
+        const url = new URL(address);
+        if (url.hostname === 'api.openai.com') {
+          const body = JSON.parse(init.body);
+          modelInputs.push(
+            JSON.parse(body.messages[1].content.split('UNTRUSTED_INPUT_JSON:\n')[1]),
+          );
+          return response({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    sufficient: true,
+                    title: '百分比增减应用',
+                    description: '确定比较标准并计算增加或减少的百分比。',
+                    subject: '数学',
+                    objectives: ['找出比较的标准量', '用差量除以标准量求百分比'],
+                    relevantSourceIds: ['source-1'],
+                  }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+          });
+        }
+        assert.equal(url.hostname, 'zh.wikipedia.org');
+        if (url.searchParams.get('list') === 'search') {
+          queries.push(url.searchParams.get('srsearch'));
+          return response({
+            query: { search: pages.map(({ pageid, title }) => ({ pageid, title })) },
+          });
+        }
+        const page = pages.find((item) => item.pageid === Number(url.searchParams.get('pageids')));
+        assert.ok(page);
+        return response({
+          query: { pages: [{ ...page, fullurl: `https://zh.wikipedia.org/wiki/${page.pageid}` }] },
+        });
+      },
+    },
+  );
+  assert.deepEqual(queries, ['百分比']);
+  assert.equal(modelInputs.length, 1);
+  assert.equal(
+    modelInputs[0].topic,
+    topic,
+    'retrieval normalization must not narrow the course goal',
+  );
+  assert.equal(modelInputs[0].level, input.level);
+  assert.deepEqual(
+    modelInputs[0].sources.map((item) => item.title),
+    ['百分比'],
+  );
+  assert.match(modelInputs[0].sources[0].text, /比较标准|比较的标准/);
+  assert.doesNotMatch(JSON.stringify(modelInputs), /UNRELATED_LONG_ARTICLE|白紙運動|蔣經國/);
+  assert.deepEqual(
+    plan.sources.map((item) => item.title),
+    ['百分比'],
+  );
 });

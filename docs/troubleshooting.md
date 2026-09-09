@@ -52,6 +52,10 @@ For a question-bank review using the OpenAI-compatible protocol, exactly `https:
 | `provider_auth`, `provider_model`, `provider_endpoint`                              | Verify the saved key, account region, model ID, protocol and API root. / 核对已保存密钥、账户区域、模型 ID、协议及根地址。                                                                                                                                                            |
 | `provider_quota`, `provider_rate_limit`, `provider_unavailable`, `provider_timeout` | Check provider billing, limits and availability. A manual retry can incur new charges. / 检查账单、额度与服务状态；手动重试可能产生新费用。                                                                                                                                           |
 
+MiniMax HTTP 422 with an explicit `input new_sensitive (1026)` or `output new_sensitive (1027)` marker is a provider content-check refusal, reported as `provider_content_filter`, not a request-parameter error. This refusal is not retried automatically. Check whether the supplied or retrieved material is relevant to the course, or provide the relevant chapter. A successful short connection test does not exercise the material used in a full course request.
+
+MiniMax 返回 HTTP 422，且明确包含 `input new_sensitive (1026)` 或 `output new_sensitive (1027)` 时，属于服务商内容检查拒绝，显示为 `provider_content_filter`，不归为请求参数错误，也不会自动重试。请核对提供或检索到的资料是否与课程相关，或提供对应章节。简短连接测试成功，不代表已检查完整课程请求使用的资料。
+
 In the bundled classroom, short-answer grading failures preserve the answer and show a retry message. Invalid or unavailable grading never earns automatic partial credit. A successful retry must return a valid score before a graded result is saved.
 
 内置课堂的简答题评分失败会保留答案并提示重试，不会因为服务不可用或结果无效就自动给基础分；合法评分返回后才保存成绩。

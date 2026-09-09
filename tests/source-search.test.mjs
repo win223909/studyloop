@@ -19,13 +19,13 @@ const source = (id, overrides = {}) => ({
   license: 'Original test fixture',
   ...overrides,
 });
-const wikiPage = (id, extract = text) =>
+const wikiPage = (id, extract, title) =>
   json({
     query: {
       pages: [
         {
           pageid: Number(id),
-          title: `Page ${id}`,
+          title,
           extract,
           fullurl: `https://en.wikipedia.org/wiki/Page_${id}`,
         },
@@ -151,6 +151,8 @@ test('invalid sources cannot claim deduplication keys and every merge obeys both
 });
 
 test('multiple Wikipedia queries run concurrently with a hard bound of twelve requests', async () => {
+  const topics = ['Fractions', 'Decimals', 'Ratios'];
+  const titleFor = (id) => `${topics[Math.floor((Number(id) - 1) / 10)]} teaching notes ${id}`;
   const calls = [];
   let releaseSearches;
   const allSearchesStarted = new Promise((resolve) => {
@@ -159,7 +161,7 @@ test('multiple Wikipedia queries run concurrently with a hard bound of twelve re
   const queryIndexes = new Map();
   const sources = await searchSources('combined topic', 'en', {
     env: {},
-    searchQueries: ['Alpha', 'Beta', 'Gamma', 'Ignored fourth'],
+    searchQueries: [...topics, 'Ignored fourth'],
     fetch: async (url) => {
       const request = new URL(url);
       calls.push(request);
@@ -177,15 +179,16 @@ test('multiple Wikipedia queries run concurrently with a hard bound of twelve re
           },
         });
       }
-      return wikiPage(request.searchParams.get('pageids'));
+      const id = request.searchParams.get('pageids');
+      return wikiPage(id, `${titleFor(id)} explain numbers and comparisons. ${text}`, titleFor(id));
     },
   });
-  assert.deepEqual([...queryIndexes.keys()], ['Alpha', 'Beta', 'Gamma']);
+  assert.deepEqual([...queryIndexes.keys()], topics);
   assert.equal(calls.length, 12);
   assert.equal(sources.length, 8);
   assert.deepEqual(
     sources.map((source) => source.title),
-    [1, 11, 21, 2, 12, 22, 3, 13].map((id) => `Page ${id}`),
+    [1, 11, 21, 2, 12, 22, 3, 13].map(titleFor),
   );
   assert.ok(calls.every((url) => url.hostname === 'en.wikipedia.org'));
   assert.ok(calls.every((url) => !url.searchParams.has('exchars')));
@@ -193,6 +196,7 @@ test('multiple Wikipedia queries run concurrently with a hard bound of twelve re
 
 test('Wikipedia caches equivalent query URLs and shared page responses across groups', async () => {
   const calls = [];
+  const titles = { 10: '小数与分数的除法', 20: '小数与分数的除法例题' };
   const sources = await searchSources('小数与分数', 'zh', {
     env: {},
     searchQueries: ['小数的除法', '小数 除法', '分数'],
@@ -201,7 +205,12 @@ test('Wikipedia caches equivalent query URLs and shared page responses across gr
       calls.push(request);
       if (request.searchParams.get('list') === 'search')
         return json({ query: { search: [{ pageid: 10 }, { pageid: 10 }, { pageid: 20 }] } });
-      return wikiPage(request.searchParams.get('pageids'));
+      const id = request.searchParams.get('pageids');
+      return wikiPage(
+        id,
+        '小数的除法可以先把除数变成整数。分数的除法可以转化为乘以除数的倒数。'.repeat(10),
+        titles[id],
+      );
     },
   });
   assert.equal(calls.filter((url) => url.searchParams.get('list') === 'search').length, 2);
@@ -212,20 +221,20 @@ test('Wikipedia caches equivalent query URLs and shared page responses across gr
   );
   assert.deepEqual(
     sources.map((item) => item.title),
-    ['Page 10', 'Page 20'],
+    [titles[10], titles[20]],
   );
 });
 
 test('each query selects passages using its own concept instead of the compound title', async () => {
   const lateRule = 'Orchids use this specific fixture rule to demonstrate the concept.';
-  const article = `Introduction.\n\n${'General historical background. '.repeat(1500)}\n\n${lateRule}`;
+  const article = `Orchids are flowering plants with specialized reproductive structures.\n\n${'General historical background. '.repeat(1500)}\n\n${lateRule}`;
   const sources = await searchSources('A broad interdisciplinary course', 'en', {
     env: {},
     searchQueries: ['Orchids'],
     fetch: async (url) =>
       new URL(url).searchParams.get('list') === 'search'
         ? json({ query: { search: [{ pageid: 10 }] } })
-        : wikiPage(10, article),
+        : wikiPage(10, article, 'Orchids'),
   });
   assert.ok(sources[0].text.includes(lateRule));
   assert.ok(sources[0].text.length <= 10000);
@@ -234,19 +243,25 @@ test('each query selects passages using its own concept instead of the compound 
 test('one failed query or article does not discard another query with usable evidence', async () => {
   const sources = await searchSources('combined topic', 'en', {
     env: {},
-    searchQueries: ['unavailable query', 'available query'],
+    searchQueries: ['Plant cells', 'Animal cells'],
     fetch: async (url) => {
       const request = new URL(url);
-      if (request.searchParams.get('srsearch') === 'unavailable query')
+      if (request.searchParams.get('srsearch') === 'Plant cells')
         return json({ error: 'upstream-private-marker' }, 503);
       if (request.searchParams.get('list') === 'search')
         return json({ query: { search: [{ pageid: 10 }, { pageid: 20 }] } });
-      return request.searchParams.get('pageids') === '10' ? json({}, 503) : wikiPage(20);
+      return request.searchParams.get('pageids') === '10'
+        ? json({}, 503)
+        : wikiPage(
+            20,
+            'Animal cells contain a membrane, cytoplasm and a nucleus. '.repeat(10),
+            'Animal cells',
+          );
     },
   });
   assert.deepEqual(
     sources.map((item) => item.title),
-    ['Page 20'],
+    ['Animal cells'],
   );
   assert.equal(JSON.stringify(sources).includes('upstream-private-marker'), false);
 });
@@ -330,7 +345,8 @@ test('Brave excerpts share the overall budget and never fetch a result URL', asy
 });
 
 test('long Wikipedia hits cannot consume the budget before another concept gets its first source', async () => {
-  const topics = ['First concept', 'Second concept', 'Third concept'];
+  const topics = ['Fractions', 'Decimals', 'Ratios'];
+  const titleFor = (id) => `${topics[Math.floor((Number(id) - 1) / 10)]} teaching notes ${id}`;
   const sources = await searchSources('A course with three separate concepts', 'en', {
     env: {},
     searchQueries: topics,
@@ -341,12 +357,12 @@ test('long Wikipedia hits cannot consume the budget before another concept gets 
         return json({ query: { search: [1, 2, 3].map((id) => ({ pageid: index * 10 + id })) } });
       }
       const id = request.searchParams.get('pageids');
-      return wikiPage(id, `Unique evidence for page ${id}. ` + 'x'.repeat(12000));
+      return wikiPage(id, `Unique evidence for page ${id}. ` + 'x'.repeat(12000), titleFor(id));
     },
   });
   assert.deepEqual(
     sources.slice(0, 3).map((source) => source.title),
-    ['Page 1', 'Page 11', 'Page 21'],
+    [1, 11, 21].map(titleFor),
   );
   for (const id of [1, 11, 21])
     assert.ok(sources.some((source) => source.text.includes(`Unique evidence for page ${id}.`)));
@@ -358,7 +374,7 @@ test('one shared Wikipedia page retains distant passages for both query concepts
   const firstRule = 'Orchids depend on the first specific teaching rule in this fixture.';
   const secondRule = 'Mosses depend on a separate specific teaching rule in this fixture.';
   const filler = 'Background historical context with no matching subject. '.repeat(300);
-  const article = `Unique article introduction.\n\n${filler}\n\n${firstRule}\n\n${filler}\n\n${secondRule}\n\n${filler}`;
+  const article = `Unique article introduction. Orchids reproduce through flowers, while mosses reproduce through spores.\n\n${filler}\n\n${firstRule}\n\n${filler}\n\n${secondRule}\n\n${filler}`;
   let pageFetches = 0;
   const sources = await searchSources('Two distinct botany concepts', 'en', {
     env: {},
@@ -367,7 +383,7 @@ test('one shared Wikipedia page retains distant passages for both query concepts
       if (new URL(url).searchParams.get('list') === 'search')
         return json({ query: { search: [{ pageid: 10 }] } });
       pageFetches++;
-      return wikiPage(10, article);
+      return wikiPage(10, article, 'Orchids and mosses');
     },
   });
   assert.equal(pageFetches, 1);
@@ -392,7 +408,13 @@ test('missing or invalid searchQueries preserve the original single-query behavi
           assert.equal(request.searchParams.get('srsearch'), '小数 除法');
           return json({ query: { search: [{ pageid: 10 }] } });
         }
-        return wikiPage(10);
+        return wikiPage(
+          10,
+          '小数的除法先把除数变为整数，再按整数除法计算，保持被除数与除数扩大相同的倍数。'.repeat(
+            8,
+          ),
+          '小数的除法',
+        );
       },
     });
     assert.equal(calls.length, 2);

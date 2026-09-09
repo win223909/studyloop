@@ -4,6 +4,8 @@ import { sourceExcerpt } from './source-excerpts.js';
 import { parseModelJson as parseStrictModelJson, ModelJsonError } from './model-json.js';
 import {
   fallbackSearchQueries,
+  initialSearchQueries,
+  isSearchCandidateRelevant,
   mergeSearchSources,
   normalizeSearchQueries,
 } from './source-search.js';
@@ -200,7 +202,17 @@ function classifyProviderFailure(status, payload) {
     has('context_length_exceeded', 'context_window_exceeded', 'max_tokens_exceeded')
   )
     return providerFailure('context_limit');
-  if ([1026, 1027].includes(businessCode) || has('content_filter', 'content_policy_violation'))
+  // The OpenAI-compatible MiniMax endpoint can put its moderation code in
+  // error.message instead of base_resp, while returning HTTP 422. Match only
+  // that explicit envelope; unrelated parameter values or request IDs are not
+  // business codes. The original message is never returned to the browser.
+  if (
+    [1026, 1027].includes(businessCode) ||
+    has('content_filter', 'content_policy_violation') ||
+    /^\s*(?:input|output) (?:new_)?sensitive \((?:1026|1027)\)(?:\s|$)/i.test(
+      errorField(detail.message),
+    )
+  )
     return providerFailure('content_filter');
   if (status === 408 || businessCode === 1001 || has('request_timeout', 'timeout_error'))
     return providerFailure('timeout');
@@ -605,7 +617,12 @@ async function discoverSources(topic, language = 'en', options = {}) {
   const cfg = config(options);
   const now = new Date().toISOString();
   const proposedQueries = normalizeSearchQueries(options.searchQueries);
-  const queries = proposedQueries.length ? proposedQueries : [topic];
+  const initialQueries = initialSearchQueries(topic);
+  const queries = proposedQueries.length
+    ? proposedQueries
+    : initialQueries.length
+      ? initialQueries
+      : [topic];
   // Cache parsed responses, not excerpts: one page can support several queries
   // while each query still selects its own relevant original passages.
   const requests = new Map();
@@ -641,6 +658,18 @@ async function discoverSources(topic, language = 'en', options = {}) {
         sources = (Array.isArray(response.web?.results) ? response.web.results : [])
           .slice(0, 5)
           .filter((item) => item && typeof item === 'object')
+          .filter((item) =>
+            isSearchCandidateRelevant(
+              {
+                title: cleanExcerpt(item.title),
+                description: cleanExcerpt(item.description),
+                snippet: Array.isArray(item.extra_snippets)
+                  ? item.extra_snippets.slice(0, 3).map(cleanExcerpt).join(' ')
+                  : '',
+              },
+              queryTopic,
+            ),
+          )
           .map((item, index) => ({
             id: `source-${index + 1}`,
             title: `${cleanExcerpt(item.title).slice(0, 230)} (search excerpts)`,
@@ -709,6 +738,13 @@ async function discoverSources(topic, language = 'en', options = {}) {
             const pageResponse = await requestOnce(pageUrl.href, { headers });
             const page = pageResponse.query?.pages?.[0];
             if (!page?.extract || Object.hasOwn(page.pageprops || {}, 'disambiguation'))
+              return null;
+            if (
+              !isSearchCandidateRelevant(
+                { title: page.title, snippet: cleanExcerpt(hit.snippet), extract: page.extract },
+                queryTopic,
+              )
+            )
               return null;
             const sourceUrl =
               page.fullurl ||
@@ -857,7 +893,8 @@ export async function createPlan(input, options = {}) {
     throw error('invalid_level', 'Enter a learning level up to 100 characters.');
   const automaticSearch = input.mode === 'search' && !input.sources;
   let searchRounds = 0;
-  const searchedQueries = [input.topic.trim()];
+  const initialQueries = automaticSearch ? initialSearchQueries(input.topic) : [];
+  const searchedQueries = initialQueries.length ? initialQueries : [input.topic.trim()];
   let sources = input.sources;
   if (!sources) {
     if (automaticSearch) {
@@ -1087,7 +1124,7 @@ export async function generateCourse(plan, selection, options = {}) {
   const author = (count, objectives, previousQuestions = []) => {
     const targets = objectives.map((text) => ({ id: objectiveIds.get(text), text }));
     return modelJson(
-      `Write exactly ${count} original single-answer multiple-choice questions and one DISTINCT follow-up practice question for each. The supplied objectives are {id,text} records. Set each question's objectiveId to exactly one supplied id, and cover every supplied objective. Do not emit a concept field or rewrite objective text; do not use unselected objectives as the focus. Each question has exactly one correct option and 4 distinct options; never include an "I don't know" choice. Mix foundation and practice, with at most two challenge questions. Include source IDs only from supplied sources; every answer, explanation, lesson, and practice must be derivable from those sources. No rote copying of long source passages. Avoid repeating any previousQuestions. Keep explanations and teaching steps concise, with 2–4 short lesson steps. Return {"sufficient":boolean,"questions":[QUESTION_FORMAT]} with no extra keys. Use Unicode mathematical symbols or plain text, and properly escape every JSON string. Set sufficient=false when the evidence cannot support the requested course. QUESTION_FORMAT=${JSON.stringify({ ...QUESTION_FORMAT, objectiveId: targets[0].id })}. Write in ${plan.language === 'zh' ? 'Chinese (except necessary subject terms)' : 'English'}.`,
+      `Write exactly ${count} original single-answer multiple-choice questions and one DISTINCT follow-up practice question for each. The supplied objectives are {id,text} records. Set each question's objectiveId to exactly one supplied id, and cover every supplied objective. Do not emit a concept field or rewrite objective text; do not use unselected objectives as the focus. Each question has exactly one correct option and 4 distinct options; never include an "I don't know" choice. Solve every main and practice option before returning: a mathematically or logically equivalent true statement is NOT a distractor, even if it phrases the answer differently. Every distractor must be false for the exact question. Explanations must identify its actual error, never invent a distinction to dismiss another correct statement. General lesson rules must remain correct for every case they claim to cover. Mix foundation and practice, with at most two challenge questions. Include source IDs only from supplied sources; every answer, explanation, lesson, and practice must be derivable from those sources. No rote copying of long source passages. Avoid repeating any previousQuestions. Keep explanations and teaching steps concise, with 2–4 short lesson steps. Return {"sufficient":boolean,"questions":[QUESTION_FORMAT]} with no extra keys. Use Unicode mathematical symbols or plain text, and properly escape every JSON string. Set sufficient=false when the evidence cannot support the requested course. QUESTION_FORMAT=${JSON.stringify({ ...QUESTION_FORMAT, objectiveId: targets[0].id })}. Write in ${plan.language === 'zh' ? 'Chinese (except necessary subject terms)' : 'English'}.`,
       { title: plan.title, level: plan.level, objectives: targets, sources, previousQuestions },
       { ...options, phase: 'questions', formatAttempts: 1 },
     );
@@ -1184,7 +1221,7 @@ export async function generateCourse(plan, selection, options = {}) {
     practice: { prompt: q.practice.prompt, choices: q.practice.choices },
   }));
   const review = await modelJson(
-    `Independently solve every question and follow-up practice using only the supplied sources. Do not trust the author. Check that exactly one option is correct in each item and that the wording is unambiguous at this level. Infer answers yourself; no author answer key is provided. Return {"reviews":[{"id":string,"answerIndex":integer,"practiceAnswerIndex":integer,"supported":boolean,"unambiguous":boolean,"sourceIds":string[],"reason":string}]}. Include each question exactly once. Set supported=true only if BOTH answers follow from the cited source text or explicit calculation using its rules. sourceIds must be a nonempty subset of that question's cited IDs. When evidence is inadequate, supported=false.`,
+    `Independently solve every question and follow-up practice using only the supplied sources. Do not trust the author. Check that exactly one option is correct in each item and that the wording is unambiguous at this level. Evaluate ALL options, including equivalent formulations: if another option is also true for the exact prompt, set unambiguous=false even when one answer is more direct or detailed. Infer answers yourself; no author answer key is provided. Return {"reviews":[{"id":string,"answerIndex":integer,"practiceAnswerIndex":integer,"supported":boolean,"unambiguous":boolean,"sourceIds":string[],"reason":string}]}. Include each question exactly once. Set supported=true only if BOTH answers follow from the cited source text or explicit calculation using its rules. sourceIds must be a nonempty subset of that question's cited IDs. When evidence is inadequate, supported=false.`,
     { level: course.level, objectives: course.objectives, sources, questions: reviewQuestions },
     { ...options, phase: 'answer_review' },
     true,
