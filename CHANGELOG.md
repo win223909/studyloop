@@ -2,6 +2,7 @@
 
 ## Unreleased — 2026-09-09
 
+- Prepare learning requests before automatic search with one bounded model call; expose the subject, goal, search terms, and original input in the outline, and retain the original topic for coverage checks. Invalid preparation output falls back to keyword extraction; refusals and service failures stop without rewording retries. Text/uploads skip preparation and external search.
 - Extract explicit concepts from exercise-style search prompts and screen candidate titles, summaries, and short introductions for relevance; retain the full original topic for model coverage checks and preserve evidence requirements.
 - Classify MiniMax HTTP 422 `input/output new_sensitive` (1026/1027) as a provider content-check refusal rather than a parameter error, without automatically retrying the refusal.
 - Strengthen authoring and blind-review instructions to check every option, reject equivalent true distractors, and explain actual errors.

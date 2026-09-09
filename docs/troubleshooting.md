@@ -6,19 +6,23 @@ A successful connection test proves that a short request works, not that a compl
 
 The phase diagnostics below cover StudyLoop outline and question-bank generation. / 下列阶段诊断用于 StudyLoop 大纲与题库生成。
 
-| Phase / 阶段      | Meaning / 含义                                                                 |
-| ----------------- | ------------------------------------------------------------------------------ |
-| `search`          | Source retrieval / 查找资料                                                    |
-| `outline`         | Course scope and evidence coverage / 大纲与资料覆盖核对                        |
-| `questions`       | Question authoring / 生成题目                                                  |
-| `answer_review`   | Independent solving without the author's answer key / 隐藏原答案的独立解题复核 |
-| `teaching_review` | Explanations, lesson steps, and evidence / 解析、教学步骤与依据复核            |
+| Phase / 阶段       | Meaning / 含义                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| `learning_request` | Organizing the subject, learning goal, and search terms / 整理学科、学习目标和检索词 |
+| `search`           | Source retrieval / 查找资料                                                          |
+| `outline`          | Course scope and evidence coverage / 大纲与资料覆盖核对                              |
+| `questions`        | Question authoring / 生成题目                                                        |
+| `answer_review`    | Independent solving without the author's answer key / 隐藏原答案的独立解题复核       |
+| `teaching_review`  | Explanations, lesson steps, and evidence / 解析、教学步骤与依据复核                  |
 
 ## What automatic recovery can do / 自动恢复的边界
 
+- **Learning request:** automatic search adds one preparation call, with at most 4,096 output tokens and a 30-second timeout. Malformed or truncated output, or an invalid result shape falls back to existing keyword extraction without another preparation call. An explicit refusal or a real service failure ends the request. The original topic remains the coverage target. Text/upload mode skips preparation and external search.
 - **JSON:** only an intact, unambiguous JSON object is extracted from supported prose, Markdown fences, or leading thinking wrappers. Strings and values are not rewritten. Missing braces, invalid escapes, duplicate keys, competing JSON objects, and truncated output are rejected; partial questions are never salvaged.
 - **Authoring:** if the first author response has invalid JSON, is cut short, or fails structural/citation validation (`bank_invalid`), discard it and make one recovery pass in batches of two questions. Each batch runs once. Validate every batch and the complete bank, then run the blind answer review and the explanation/evidence review on the complete bank. A failed recovery batch ends the request; source insufficiency does not trigger this recovery.
 - **Outline and reviews:** a JSON-format failure retries only that stage once. The scoped official MiniMax-M3 review recovery below also permits a first timeout or truncation, within the same two-attempt limit. An actual wrong answer, inadequate evidence, model refusal, or context limit is not retried into acceptance. An invalid outline or a rejected review is not treated as a format failure.
+
+自动搜索增加一次学习需求整理，输出最多 4,096 Token，超时上限 30 秒。JSON 格式无效、输出截断或结果结构无效时，降级到现有关键词提取，不再次调用整理；明确拒绝或真实服务故障则结束请求。原主题仍是覆盖审核目标，文字／上传模式跳过整理和外部检索。
 
 JSON 只允许从明确的说明文字、代码围栏或前置思考标签中无损取出完整对象，不改写内部字符串或值，不补括号、不猜转义，也不接受重复字段、多个候选对象或截断片段。首次出题的 JSON 格式错误、截断或结构／引用校验失败（`bank_invalid`）可触发**一轮**恢复：丢弃原输出，按每批两题重新生成，每批只请求一次；各批和合并后的题库都须通过完整结构校验，随后对全题库重新做独立答案复核和解析／教学依据复核。任一恢复批失败就结束，资料不足不触发分批恢复。大纲或复核的 JSON 格式错误仅重试该阶段一次；大纲结构不合格、复核发现错答案或证据不足、模型拒绝、上下文限制均不会因此被放行。
 

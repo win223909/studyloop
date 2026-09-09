@@ -157,3 +157,12 @@ test('generic word-problem scaffolding and absent metadata never count as eviden
   assert.equal(isSearchCandidateRelevant({}, '百分比'), false);
   assert.equal(isSearchCandidateRelevant(null, 'fractions'), false);
 });
+
+test('exact subject titles remain relevant when segmentation yields only single characters', () => {
+  assert.equal(isSearchCandidateRelevant({ title: '等式' }, '等式'), true);
+  assert.equal(
+    isSearchCandidateRelevant({ title: '天气', extract: '等式出现在文章末尾。' }, '等式'),
+    false,
+  );
+  assert.equal(isSearchCandidateRelevant({ title: '一个' }, '一个'), false);
+});

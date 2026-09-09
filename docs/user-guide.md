@@ -24,27 +24,31 @@ Remote students see a read-only explanation and do not need API keys. A shared i
 
 Your operator must first save a working [model configuration](configuration.md). Choose the course language and a clear level, then select an input method:
 
-| Method                    | Good input                                        | What happens                                                                  |
-| ------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Topic search / 关键词搜索 | “Grade 6 equivalent fractions” / “六年级等值分数” | Retrieves sources, checks coverage, and can make one focused follow-up search |
-| Upload / 上传             | A text-based PDF, TXT, or Markdown chapter        | Extracts text and uses it as course material                                  |
-| Paste text / 粘贴文字     | Your notes or a passage you can use               | Uses that passage directly                                                    |
+| Method                    | Good input                                        | What happens                                                                                                  |
+| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Topic search / 关键词搜索 | “Grade 6 equivalent fractions” / “六年级等值分数” | Organizes the learning request, retrieves sources, checks coverage, and can make one focused follow-up search |
+| Upload / 上传             | A text-based PDF, TXT, or Markdown chapter        | Extracts text and uses it as course material                                                                  |
+| Paste text / 粘贴文字     | Your notes or a passage you can use               | Uses that passage directly                                                                                    |
 
 The upload limit is 8 MB; PDFs must have at most 60 pages. Extracted or pasted text should be 400–36,000 characters. Images, scanned PDFs without text, audio, and videos are not parsed in this release. Direct URL ingestion is not implemented; provide the relevant text instead.
 
 上传最大 8 MB，PDF 最多 60 页；文字内容需为 400–36,000 字符。本版不解析纯扫描件、图片、音视频，也没有直接抓取任意网址的入口。扫描件可以先 OCR，再上传可提取文字的 PDF。
 
-Keyword search first retrieves Wikipedia articles, or web excerpts if Brave Search is configured, and asks the model whether they support the requested topic and level. If coverage is insufficient, the model can suggest up to three concept names or synonyms for one automatic follow-up search, followed by one more coverage check. Each coverage check can retry a JSON-format failure once, so this path may take longer and cost more. If the evidence still does not support a course, use a clickable narrower-topic suggestion or switch to pasted/uploaded material; StudyLoop does not fill gaps with invented teaching content.
+Before keyword search, the model organizes your request into a subject, learning goal, and up to three search terms while preserving your meaning and level. This step runs once by default, with at most 4,096 output tokens and 30 seconds; it can add waiting time and model cost. Malformed or truncated output, or an invalid result shape falls back to ordinary keyword extraction. An explicit refusal or a service failure is reported rather than retried with different wording. Pasted/uploaded material skips this step.
 
-关键词搜索先查找 Wikipedia 正文或已配置的 Brave 网页摘要，再由模型核对是否覆盖所选主题与学习水平。覆盖不足时，模型可给出最多三个概念名称或同义检索词，自动补查一轮并再次核对；每次核对的 JSON 格式失败还可重试一次，可能增加等待时间和费用。仍不满足时，页面会明确提示，并提供可点击的细分主题及粘贴／上传入口，不会编造缺失的教学资料。
+关键词搜索前，模型先整理学科、学习目标和最多三个检索词，保留你的原意与学习水平。此步骤默认只调用一次，输出最多 4,096 Token，超时上限 30 秒，会增加等待时间和模型费用。JSON 格式无效、输出截断或结果结构无效时，降级使用普通关键词提取；明确拒绝或服务故障会直接报告，不通过换词重试。粘贴／上传模式跳过此步骤。
+
+Search then retrieves Wikipedia articles, or web excerpts if Brave Search is configured, screens candidate titles, summaries, and short introductions for relevance, and asks the model whether the evidence supports the complete original topic and level. The organized goal is only a search hint, not teaching evidence. If coverage is insufficient, the model can suggest up to three concept names or synonyms for one automatic follow-up search, followed by one more coverage check. Each coverage check can retry a JSON-format failure once, so this path may take longer and cost more. If the evidence still does not support a course, use a clickable narrower-topic suggestion or switch to pasted/uploaded material; StudyLoop does not fill gaps with invented teaching content.
+
+接着查找 Wikipedia 正文或已配置的 Brave 网页摘要，根据标题、摘要和短导语预筛相关性，再由模型核对资料是否覆盖完整原主题与学习水平；整理的目标只是检索提示，不是教学依据。覆盖不足时，模型可给出最多三个概念名称或同义检索词，自动补查一轮并再次核对；每次核对的 JSON 格式失败还可重试一次，可能增加等待时间和费用。仍不满足时，页面会明确提示，并提供可点击的细分主题及粘贴／上传入口，不会编造缺失的教学资料。
 
 Wikipedia is not a textbook catalogue: school chapter names and combined curriculum topics can retrieve unrelated encyclopedia articles. Brave Search can broaden discovery, but short excerpts may still be inadequate. For a specific textbook edition, supply a chapter you are allowed to use. Pasted text and uploaded files are used directly and never trigger automatic external search; model processing still uses your configured provider.
 
 Wikipedia 并非教材目录，教材章节名或组合知识点可能搜到无关词条。配置 Brave Search 可扩大检索范围，但摘要仍不一定足以出题；学习特定版本教材时，建议直接提供有权使用的章节正文。粘贴或上传模式只使用所提供的材料，不会自动发起外部检索；内容处理仍使用已配置的模型服务。
 
-Review the proposed course title, level, sources, and objectives. Select the objectives you want and choose 4, 6, or 8 questions. Generation includes a separate answer/evidence review, so it can take more than one model call. If material is insufficient or the bank fails review, refine the topic or add a fuller explanation before trying again.
+Review the proposed course title, level, sources, and objectives. For search courses, expand the learning-request details to compare the organized subject, goal, and search terms with your original input. Select the objectives you want and choose 4, 6, or 8 questions. Generation includes a separate answer/evidence review, so it can take more than one model call. If material is insufficient or the bank fails review, refine the topic or add a fuller explanation before trying again.
 
-先检查课程大纲和来源，勾选需要练习的知识点，再生成 4、6 或 8 道题。周计划只说明“学什么”时，通常需要补充真正的知识讲解。材料不足或题库复核不通过时，缩小主题、增加来源内容后再试。
+先检查课程大纲和来源；搜索课程可展开学习需求详情，将整理后的学科、目标和检索词与原输入对照。勾选需要练习的知识点，再生成 4、6 或 8 道题。周计划只说明“学什么”时，通常需要补充真正的知识讲解。材料不足或题库复核不通过时，缩小主题、增加来源内容后再试。
 
 The first authoring response can restart once in two-question batches if its JSON is malformed, truncated or structurally invalid. Every batch and the combined bank must pass validation, then both independent reviews. For the supported official MiniMax-M3 review configuration, a first format error, timeout or truncation retries only that review with thinking disabled; it reuses the authored bank within the current request and keeps the two-attempt limit. If a batch, evidence check or review still fails, keep the displayed error category, phase and request ID when available. Your confirmed outline remains useful for another attempt; a failed bank is not saved as a finished course. See [troubleshooting](troubleshooting.md) for recovery limits, model errors and retrying a request whose response was lost.
 

@@ -18,14 +18,39 @@ const text =
   );
 const response = (value, status = 200) => new Response(JSON.stringify(value), { status });
 function rig(outputs, { emptyInitial = false, small = false, failSearch = false } = {}) {
-  const calls = { queries: [], inputs: [], destinations: [] };
+  const calls = {
+    queries: [],
+    inputs: [],
+    outlineInputs: [],
+    learningInputs: [],
+    destinations: [],
+  };
   const fetch = async (address, init) => {
     const url = new URL(address);
     calls.destinations.push(url.hostname);
     if (url.hostname === 'api.openai.com') {
       const body = JSON.parse(init.body);
-      calls.inputs.push(JSON.parse(body.messages[1].content.split('UNTRUSTED_INPUT_JSON:\n')[1]));
-      const value = outputs[calls.inputs.length - 1];
+      const data = JSON.parse(body.messages[1].content.split('UNTRUSTED_INPUT_JSON:\n')[1]);
+      calls.inputs.push(data);
+      if (!Object.hasOwn(data, 'sources')) {
+        calls.learningInputs.push(data);
+        return response({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  subject: '数学',
+                  goal: `完整学习${data.topic}并应用到实际问题。`,
+                  searchQueries: [data.topic],
+                }),
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        });
+      }
+      calls.outlineInputs.push(data);
+      const value = outputs[calls.outlineInputs.length - 1];
       assert.notEqual(value, undefined, 'No unbounded model retry');
       if (value instanceof Response) return value;
       return response({
@@ -60,12 +85,14 @@ function rig(outputs, { emptyInitial = false, small = false, failSearch = false 
   return { calls, options: { env, fetch } };
 }
 
-test('covered searches keep one retrieval and one outline request', async () => {
+test('covered searches prepare the request once then keep one retrieval and one outline request', async () => {
   const { calls, options } = rig([outline]);
   const plan = await createPlan(input, options);
   assert.equal(plan.title, input.topic);
   assert.equal(calls.queries.length, 1);
-  assert.equal(calls.inputs.length, 1);
+  assert.equal(calls.outlineInputs.length, 1);
+  assert.equal(calls.learningInputs.length, 1);
+  assert.equal(calls.inputs.length, 2);
 });
 
 test('insufficient compound topic gets one supplemental round and is reassessed in full', async () => {
@@ -75,8 +102,8 @@ test('insufficient compound topic gets one supplemental round and is reassessed 
   ]);
   const plan = await createPlan(input, options);
   assert.equal(calls.queries.length, 4);
-  assert.equal(calls.inputs.length, 2);
-  for (const request of calls.inputs) {
+  assert.equal(calls.outlineInputs.length, 2);
+  for (const request of calls.outlineInputs) {
     assert.equal(request.topic, input.topic);
     assert.equal(request.level, input.level);
   }
@@ -94,8 +121,8 @@ test('zero initial sources still permits keyword recovery without accepting unsu
     { emptyInitial: true },
   );
   const plan = await createPlan(input, options);
-  assert.deepEqual(calls.inputs[0].sources, []);
-  assert.equal(calls.inputs.length, 2);
+  assert.deepEqual(calls.outlineInputs[0].sources, []);
+  assert.equal(calls.outlineInputs.length, 2);
   assert.ok(plan.sources.length);
 });
 
@@ -109,7 +136,7 @@ test('a model claiming sufficiency cannot bypass the minimum evidence gate', asy
       return true;
     },
   );
-  assert.equal(calls.inputs.length, 1);
+  assert.equal(calls.outlineInputs.length, 1);
 });
 
 test('successful plans retain only selected, supplied teaching evidence', async () => {
@@ -118,7 +145,7 @@ test('successful plans retain only selected, supplied teaching evidence', async 
     { ...outline, relevantSourceIds: ['source-1', 'invented-id'] },
   ]);
   const plan = await createPlan(input, options);
-  assert.equal(calls.inputs.length, 2);
+  assert.equal(calls.outlineInputs.length, 2);
   assert.equal(plan.sources.length, 1);
   assert.equal(plan.sources[0].id, 'source-1');
   assert.equal(plan.sources[0].title, '四则运算');
@@ -134,7 +161,7 @@ test('invented or empty source selections cannot turn recovery into a successful
       () => createPlan(input, options),
       (error) => error.code === 'sources_insufficient' && error.sourceSearch.rounds === 2,
     );
-    assert.equal(calls.inputs.length, 2);
+    assert.equal(calls.outlineInputs.length, 2);
   }
 });
 
@@ -159,7 +186,7 @@ test('second refusal is final, actionable, bounded, and does not serialize model
       return true;
     },
   );
-  assert.equal(calls.inputs.length, 2);
+  assert.equal(calls.outlineInputs.length, 2);
   assert.ok(calls.queries.length <= 4);
 });
 
@@ -186,7 +213,7 @@ test('a single concept with no usable hints fails without repeating the same sea
     },
   );
   assert.equal(calls.queries.length, 1);
-  assert.equal(calls.inputs.length, 1);
+  assert.equal(calls.outlineInputs.length, 1);
 });
 
 test('provided material never triggers supplemental public search', async () => {
@@ -201,7 +228,8 @@ test('provided material never triggers supplemental public search', async () => 
       (error) => error.code === 'sources_insufficient' && !error.sourceSearch,
     );
     assert.equal(calls.queries.length, 0);
-    assert.equal(calls.inputs.length, 1);
+    assert.equal(calls.outlineInputs.length, 1);
+    assert.equal(calls.learningInputs.length, 0);
   }
 });
 
@@ -211,14 +239,16 @@ test('search and provider outages are not retried as content coverage failures',
     () => createPlan(input, search.options),
     (error) => error.code === 'search_http' && !error.sourceSearch,
   );
-  assert.equal(search.calls.inputs.length, 0);
+  assert.equal(search.calls.outlineInputs.length, 0);
+  assert.equal(search.calls.learningInputs.length, 1);
   const provider = rig([response({}, 401)]);
   await assert.rejects(
     () => createPlan(input, provider.options),
     (error) => error.code === 'provider_auth' && !error.sourceSearch,
   );
-  assert.equal(provider.calls.inputs.length, 1);
+  assert.equal(provider.calls.outlineInputs.length, 1);
   assert.equal(provider.calls.queries.length, 1);
+  assert.equal(provider.calls.learningInputs.length, 1);
 });
 
 test('percentage word problems send relevant evidence and the complete original goal to the outline model', async () => {
@@ -249,18 +279,27 @@ test('percentage word problems send relevant evidence and the complete original 
           modelInputs.push(
             JSON.parse(body.messages[1].content.split('UNTRUSTED_INPUT_JSON:\n')[1]),
           );
+          const preparing = !Object.hasOwn(modelInputs.at(-1), 'sources');
           return response({
             choices: [
               {
                 message: {
-                  content: JSON.stringify({
-                    sufficient: true,
-                    title: '百分比增减应用',
-                    description: '确定比较标准并计算增加或减少的百分比。',
-                    subject: '数学',
-                    objectives: ['找出比较的标准量', '用差量除以标准量求百分比'],
-                    relevantSourceIds: ['source-1'],
-                  }),
+                  content: JSON.stringify(
+                    preparing
+                      ? {
+                          subject: '数学',
+                          goal: '求一个数比另一个多或少百分之几，识别标准量并应用于实际问题。',
+                          searchQueries: ['百分比'],
+                        }
+                      : {
+                          sufficient: true,
+                          title: '百分比增减应用',
+                          description: '确定比较标准并计算增加或减少的百分比。',
+                          subject: '数学',
+                          objectives: ['找出比较的标准量', '用差量除以标准量求百分比'],
+                          relevantSourceIds: ['source-1'],
+                        },
+                  ),
                 },
                 finish_reason: 'stop',
               },
@@ -283,18 +322,19 @@ test('percentage word problems send relevant evidence and the complete original 
     },
   );
   assert.deepEqual(queries, ['百分比']);
-  assert.equal(modelInputs.length, 1);
+  assert.equal(modelInputs.length, 2);
+  assert.deepEqual(modelInputs[0], { topic, level: input.level, language: input.language });
   assert.equal(
-    modelInputs[0].topic,
+    modelInputs[1].topic,
     topic,
     'retrieval normalization must not narrow the course goal',
   );
-  assert.equal(modelInputs[0].level, input.level);
+  assert.equal(modelInputs[1].level, input.level);
   assert.deepEqual(
-    modelInputs[0].sources.map((item) => item.title),
+    modelInputs[1].sources.map((item) => item.title),
     ['百分比'],
   );
-  assert.match(modelInputs[0].sources[0].text, /比较标准|比较的标准/);
+  assert.match(modelInputs[1].sources[0].text, /比较标准|比较的标准/);
   assert.doesNotMatch(JSON.stringify(modelInputs), /UNRELATED_LONG_ARTICLE|白紙運動|蔣經國/);
   assert.deepEqual(
     plan.sources.map((item) => item.title),

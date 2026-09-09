@@ -169,6 +169,16 @@ export function isSearchCandidateRelevant(candidate, query) {
     // complete title, optionally followed by an encyclopedia disambiguator.
     return title === subject || new RegExp(`^${subject}\\s*\\([^()]{1,40}\\)$`, 'u').test(title);
   }
+  // A canonical subject title is useful even when the word segmenter splits
+  // short terms such as 等式 into individual characters. Generic scaffolding
+  // still does not qualify, and the full course coverage check remains required.
+  if (
+    title === subject &&
+    subject.length >= 2 &&
+    /\p{L}/u.test(subject) &&
+    !SEARCH_STOP_WORDS.has(subject)
+  )
+    return true;
   const terms = courseSearchTerms(query);
   if (!terms.length) return false;
   const summary = comparableSearchText(

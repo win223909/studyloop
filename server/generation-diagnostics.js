@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 const PHASES = new Set([
+  'learning_request',
   'search',
   'outline',
   'questions',
@@ -19,6 +20,7 @@ const CODES = new Set([
   'provider_content_filter',
   'bank_invalid',
   'plan_invalid',
+  'learning_request_invalid',
   'review_invalid',
   'review_rejected',
   'teaching_review_rejected',

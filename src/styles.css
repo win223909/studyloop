@@ -1242,6 +1242,41 @@ textarea:focus-visible {
   gap: 32px;
   margin-top: 32px;
 }
+.learning-request-details {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: white;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.learning-request-details summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+.learning-request-details dl {
+  margin: 16px 0 0;
+}
+.learning-request-details dl > div + div {
+  margin-top: 12px;
+}
+.learning-request-details dt {
+  font-size: 12px;
+  font-weight: 600;
+}
+.learning-request-details dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.learning-request-details ul {
+  margin: 0;
+  padding-left: 20px;
+}
 .outline-layout > section {
   padding: 28px 29px;
   border: 1px solid var(--line);

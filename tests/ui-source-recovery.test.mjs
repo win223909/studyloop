@@ -33,7 +33,7 @@ test('malformed diagnostics cannot claim search rounds or supply HTML topics', (
     { rounds: 3 },
     { rounds: '2' },
     { queries: 'not an array' },
-    { queries: Array(5).fill('topic') },
+    { queries: Array(7).fill('topic') },
     { suggestedTopics: Array(4).fill('topic') },
   ])
     assert.equal(normalizeSourceSearch({ ...valid, ...change }), undefined);

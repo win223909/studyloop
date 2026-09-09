@@ -1017,7 +1017,7 @@ export async function createApp(options = {}) {
                   queries: Array.isArray(error.sourceSearch.queries)
                     ? error.sourceSearch.queries
                         .filter((value) => typeof value === 'string' && value.length <= 300)
-                        .slice(0, 4)
+                        .slice(0, 6)
                     : [],
                   suggestedTopics: Array.isArray(error.sourceSearch.suggestedTopics)
                     ? error.sourceSearch.suggestedTopics

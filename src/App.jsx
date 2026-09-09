@@ -80,8 +80,8 @@ const COPY = {
     en: 'English',
     createPlan: '整理课程大纲',
     planning: '正在整理资料与大纲…',
-    searchPlanning: '正在检索资料…',
-    searchProgress: '正在查找并核对资料，覆盖不足时会自动补查。',
+    searchPlanning: '正在整理学习需求并检索资料…',
+    searchProgress: '正在整理学习需求、查找并核对资料，覆盖不足时会自动补查。',
     searchTopic: '本次主题',
     sourceRecoveryTitle: '资料还不足以生成这门课',
     searchRounds: '已完成搜索轮数',
@@ -95,6 +95,7 @@ const COPY = {
     failedStep: '失败步骤',
     diagnosticId: '排查编号',
     generationPhases: {
+      learning_request: '学习需求整理',
       outline: '课程大纲',
       questions: '题目生成',
       answer_review: '答案复核',
@@ -122,6 +123,11 @@ const COPY = {
     back: '返回',
     outline: '确认学习范围',
     outlineSub: '选好知识点，再生成适合你的练习。',
+    learningRequest: '整理后的学习需求',
+    learningSubject: '学科',
+    learningGoal: '学习目标',
+    learningSearchQueries: '首轮检索关键词',
+    learningOriginalTopic: '原始输入',
     scope: '学习目标',
     chooseObjectives: '选择这次想学的知识点',
     source: '资料来源',
@@ -290,9 +296,9 @@ const COPY = {
     en: 'English',
     createPlan: 'Build course outline',
     planning: 'Preparing sources and outline…',
-    searchPlanning: 'Searching for sources…',
+    searchPlanning: 'Clarifying your learning request and searching…',
     searchProgress:
-      'Searching and checking sources. If coverage is insufficient, the search will expand automatically.',
+      'Clarifying your learning request, then searching and checking sources. If coverage is insufficient, the search will expand automatically.',
     searchTopic: 'Submitted topic',
     sourceRecoveryTitle: 'More source material is needed',
     searchRounds: 'Completed search rounds',
@@ -308,6 +314,7 @@ const COPY = {
     failedStep: 'Failed step',
     diagnosticId: 'Diagnostic ID',
     generationPhases: {
+      learning_request: 'Learning request',
       outline: 'Course outline',
       questions: 'Question generation',
       answer_review: 'Answer review',
@@ -336,6 +343,11 @@ const COPY = {
     back: 'Back',
     outline: 'Choose your learning scope',
     outlineSub: 'Pick your objectives before building a practice set.',
+    learningRequest: 'Clarified learning request',
+    learningSubject: 'Subject',
+    learningGoal: 'Learning goal',
+    learningSearchQueries: 'First search keywords',
+    learningOriginalTopic: 'Original input',
     scope: 'Learning objectives',
     chooseObjectives: 'What would you like to work on?',
     source: 'Sources',
@@ -567,6 +579,49 @@ function StatusBadge({ status, t }) {
       )}
       {status === 'correct' ? t.correct : status === 'unknown' ? t.notYet : t.incorrect}
     </span>
+  );
+}
+
+function LearningRequestDetails({ value, t }) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !['originalTopic', 'subject', 'goal'].every(
+      (key) => typeof value[key] === 'string' && value[key].trim(),
+    ) ||
+    !Array.isArray(value.searchQueries)
+  )
+    return null;
+  const queries = value.searchQueries.filter((query) => typeof query === 'string' && query.trim());
+  if (!queries.length) return null;
+  return (
+    <details className="learning-request-details">
+      <summary>{t.learningRequest}</summary>
+      <dl>
+        <div>
+          <dt>{t.learningSubject}</dt>
+          <dd>{value.subject}</dd>
+        </div>
+        <div>
+          <dt>{t.learningGoal}</dt>
+          <dd>{value.goal}</dd>
+        </div>
+        <div>
+          <dt>{t.learningSearchQueries}</dt>
+          <dd>
+            <ul>
+              {queries.map((query, index) => (
+                <li key={index}>{query}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+        <div>
+          <dt>{t.learningOriginalTopic}</dt>
+          <dd>{value.originalTopic}</dd>
+        </div>
+      </dl>
+    </details>
   );
 }
 
@@ -1845,6 +1900,7 @@ export default function App() {
                   <span className="eyebrow">01 / {t.outline}</span>
                   <h1 className="content-title">{plan.title}</h1>
                   <p className="page-subtitle">{plan.description || t.outlineSub}</p>
+                  <LearningRequestDetails value={plan.learningRequest} t={t} />
                   <div className="outline-layout">
                     <section>
                       <h2>{t.scope}</h2>

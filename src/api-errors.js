@@ -129,9 +129,9 @@ export function isSourceCoverageError(error) {
 }
 
 export function normalizeSourceSearch(value) {
-  const plainText = (text, max) =>
+  const plainText = (text, max, min = 2) =>
     typeof text === 'string' &&
-    text.trim().length >= 2 &&
+    text.trim().length >= min &&
     text.length <= max &&
     !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(text) &&
     !/<\/?[a-z!][^>]*>/iu.test(text);
@@ -141,17 +141,17 @@ export function normalizeSourceSearch(value) {
     !plainText(value.topic, 200) ||
     ![1, 2].includes(value.rounds) ||
     !Array.isArray(value.queries) ||
-    value.queries.length > 4 ||
+    value.queries.length > 6 ||
     !Array.isArray(value.suggestedTopics) ||
     value.suggestedTopics.length > 3
   )
     return undefined;
-  const keywords = (items, max) => [
+  const keywords = (items, max, min = 2) => [
     ...new Set(
       items
         .filter(
           (item) =>
-            plainText(item, max) &&
+            plainText(item, max, min) &&
             !/[<>]/u.test(item) &&
             !/(?:\b[a-z][a-z\d+.-]*:\/\/|\b(?:data|javascript|file):|(?:^|\s)(?:www\.|\/\/))/iu.test(
               item,
@@ -163,7 +163,7 @@ export function normalizeSourceSearch(value) {
   return {
     topic: value.topic.trim(),
     rounds: value.rounds,
-    queries: keywords(value.queries, 200),
+    queries: keywords(value.queries, 200, 1),
     suggestedTopics: keywords(value.suggestedTopics, 120),
   };
 }
@@ -177,7 +177,14 @@ export function normalizeGenerationDiagnostic(value) {
       value.requestId,
     ) ||
     !['plan', 'course', 'classroom'].includes(value.operation) ||
-    !['outline', 'questions', 'answer_review', 'teaching_review', 'search'].includes(value.phase) ||
+    ![
+      'learning_request',
+      'outline',
+      'questions',
+      'answer_review',
+      'teaching_review',
+      'search',
+    ].includes(value.phase) ||
     ![1, 2].includes(value.attempts)
   )
     return undefined;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { validateCourse, validateSource } from './schema.js';
 import { sourceExcerpt } from './source-excerpts.js';
+import { DEFAULT_LEARNING_REQUEST_PROMPT, validateLearningRequest } from './learning-request.js';
 import { parseModelJson as parseStrictModelJson, ModelJsonError } from './model-json.js';
 import {
   fallbackSearchQueries,
@@ -493,7 +494,7 @@ async function requestModelJson(
     if (
       cfg.separateReasoning &&
       model === 'MiniMax-M3' &&
-      (options.phase === 'questions' || disableReviewThinking)
+      (['questions', 'learning_request'].includes(options.phase) || disableReviewThinking)
     )
       body.thinking = { type: 'disabled' };
     if (cfg.jsonMode) body.response_format = { type: 'json_object' };
@@ -616,7 +617,7 @@ async function discoverSources(topic, language = 'en', options = {}) {
   const lang = language === 'zh' ? 'zh' : 'en';
   const cfg = config(options);
   const now = new Date().toISOString();
-  const proposedQueries = normalizeSearchQueries(options.searchQueries);
+  const proposedQueries = normalizeSearchQueries(options.searchQueries, { allowSingleHan: true });
   const initialQueries = initialSearchQueries(topic);
   const queries = proposedQueries.length
     ? proposedQueries
@@ -843,7 +844,7 @@ function safeText(value, max = 250) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 }
 
-const PLAN_INSTRUCTION = `Plan a short introductory course matching the ENTIRE requested topic and level, based strictly on the provided source material. Do not invent missing facts or silently narrow the topic. Interpret broad terms in the curriculum context of the learner's level; never substitute an advanced technical meaning just because a source exists. In elementary mathematics, teach concrete arithmetic and everyday quantities, not function notation, vectors or abstract algebra. Definitions of arithmetic operations can support original everyday word problems and quantity relationships through normal reasoning; a source need not use the exact curriculum chapter title. Assess whether sources contain instructional facts relevant to this interpretation, not just a schedule, table of contents, prompt, or link list. Normal reasoning, worked examples, and calculations from sourced rules are allowed. Return {"sufficient":boolean,"title":string,"description":string,"subject":string,"objectives":string[],"relevantSourceIds":string[]}. Set sufficient=false if the material cannot support ALL requested concepts at the requested level. When sufficient=true, give 3–6 concrete learning objectives supported by the sources, in the requested language. Use learner-friendly goals rather than copied encyclopedia prose. The title is at most 200 characters, description at most 2000, subject at most 100, each objective at most 250. relevantSourceIds lists only supplied sources with useful instructional facts that support the planned objectives; use [] if none. Ignore unrelated or overly advanced articles even if they are long.
+const PLAN_INSTRUCTION = `Plan a short introductory course matching the ENTIRE requested topic and level, based strictly on the provided source material. If learningRequest is supplied, it is a tentative interpretation for retrieval, NOT teaching evidence: check it against the original topic, ignore invented or missing scope, and let the full original topic and supplied level take precedence. Do not invent missing facts or silently narrow the topic. Interpret broad terms in the curriculum context of the learner's level; never substitute an advanced technical meaning just because a source exists. In elementary mathematics, teach concrete arithmetic and everyday quantities, not function notation, vectors or abstract algebra. Definitions of arithmetic operations can support original everyday word problems and quantity relationships through normal reasoning; a source need not use the exact curriculum chapter title. Assess whether sources contain instructional facts relevant to this interpretation, not just a schedule, table of contents, prompt, or link list. Normal reasoning, worked examples, and calculations from sourced rules are allowed. Return {"sufficient":boolean,"title":string,"description":string,"subject":string,"objectives":string[],"relevantSourceIds":string[]}. Set sufficient=false if the material cannot support ALL requested concepts at the requested level. When sufficient=true, give 3–6 concrete learning objectives supported by the sources, in the requested language. Use learner-friendly goals rather than copied encyclopedia prose. The title is at most 200 characters, description at most 2000, subject at most 100, each objective at most 250. relevantSourceIds lists only supplied sources with useful instructional facts that support the planned objectives; use [] if none. Ignore unrelated or overly advanced articles even if they are long.
 When sufficient=false, also return {"searchQueries":string[]}. Propose at most 3 short search keywords for the missing foundational concepts, using canonical subject terms or synonyms likely to have encyclopedia articles in the requested language. Split compound topics into their underlying concepts; choose terms appropriate to the learner's level, without adding generic grade labels or repeating a failed query. These are retrieval hints, NOT evidence: never invent source text, links, or citations. If no sources are supplied, sufficient must be false and you should still propose search keywords.`;
 
 function isCoverageError(failure) {
@@ -862,7 +863,7 @@ function coverageFailure(topic, rounds, queries, suggestions) {
   failure.sourceSearch = {
     topic,
     rounds,
-    queries: queries.slice(0, 4),
+    queries: queries.slice(0, 6),
     suggestedTopics: normalizeSearchQueries(suggestions, { exclude: topic }),
   };
   return failure;
@@ -873,6 +874,47 @@ function relevantPlanSources(proposed, sources, required = false) {
   // automatic search must identify real evidence before a plan can be accepted.
   if (!Array.isArray(proposed.relevantSourceIds)) return required ? [] : sources;
   return sources.filter((source) => proposed.relevantSourceIds.includes(source.id));
+}
+
+async function prepareLearningRequest(input, options) {
+  const cfg = config(options);
+  const requestOptions = {
+    ...options,
+    phase: 'learning_request',
+    formatAttempts: 1,
+    env: {
+      ...(options.env ?? process.env),
+      LLM_MAX_OUTPUT_TOKENS: String(Math.min(cfg.maxTokens, 4096)),
+      LLM_TIMEOUT_MS: String(Math.min(cfg.timeout, 30000)),
+    },
+  };
+  try {
+    const proposed = await modelJson(DEFAULT_LEARNING_REQUEST_PROMPT, input, requestOptions);
+    const prepared = validateLearningRequest(proposed, input.topic);
+    if (prepared) return prepared;
+    emitModelEvent(options, {
+      phase: 'learning_request',
+      event: 'recovering',
+      attempt: 1,
+      code: 'learning_request_invalid',
+    });
+  } catch (failure) {
+    // Optional interpretation must not make malformed JSON a new roadblock.
+    // Refusals, content checks, authentication and network failures are final;
+    // none are rewritten into a different request or silently retried.
+    if (
+      !(failure instanceof CoreError) ||
+      !['model_format', 'model_truncated'].includes(failure.code)
+    )
+      throw failure;
+    emitModelEvent(options, {
+      phase: 'learning_request',
+      event: 'recovering',
+      attempt: 1,
+      code: failure.code,
+    });
+  }
+  return null;
 }
 
 export async function createPlan(input, options = {}) {
@@ -893,13 +935,21 @@ export async function createPlan(input, options = {}) {
     throw error('invalid_level', 'Enter a learning level up to 100 characters.');
   const automaticSearch = input.mode === 'search' && !input.sources;
   let searchRounds = 0;
-  const initialQueries = automaticSearch ? initialSearchQueries(input.topic) : [];
-  const searchedQueries = initialQueries.length ? initialQueries : [input.topic.trim()];
+  const learningRequest = automaticSearch
+    ? await prepareLearningRequest({ topic: input.topic, level, language }, options)
+    : null;
+  const initialQueries = automaticSearch
+    ? (learningRequest?.searchQueries ?? initialSearchQueries(input.topic))
+    : [];
+  const searchedQueries = initialQueries.length ? [...initialQueries] : [input.topic.trim()];
   let sources = input.sources;
   if (!sources) {
     if (automaticSearch) {
       try {
-        sources = await searchSources(input.topic, language, options);
+        sources = await searchSources(input.topic, language, {
+          ...options,
+          searchQueries: initialQueries,
+        });
       } catch (failure) {
         if (!isCoverageError(failure)) throw failure;
         sources = [];
@@ -931,6 +981,7 @@ export async function createPlan(input, options = {}) {
       language,
       sources,
       searchedQueries: automaticSearch ? searchedQueries : [],
+      ...(learningRequest ? { learningRequest } : {}),
     },
     options,
   );
@@ -974,7 +1025,14 @@ export async function createPlan(input, options = {}) {
       }
       proposed = await modelJson(
         PLAN_INSTRUCTION,
-        { topic: input.topic, level, language, sources, searchedQueries },
+        {
+          topic: input.topic,
+          level,
+          language,
+          sources,
+          searchedQueries,
+          ...(learningRequest ? { learningRequest } : {}),
+        },
         options,
       );
       enoughText = true;
@@ -1023,6 +1081,7 @@ export async function createPlan(input, options = {}) {
     language,
     objectives: proposed.objectives.map((item) => item.trim()),
     sources,
+    ...(learningRequest ? { learningRequest } : {}),
   };
 }
 
