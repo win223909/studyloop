@@ -40,6 +40,6 @@
     "@playwright/test": "^1.63.0",
     "@vitejs/plugin-react": "^6.1.1",
     "prettier": "^3.9.6",
-    "vite": "^8.2.2"
+    "vite": "^8.3.1"
   }
 }
